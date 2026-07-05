@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { NAV_ITEMS, NavId } from "../data/mockData";
 
 function NavIcon({ id, active }: { id: NavId; active: boolean }) {
@@ -51,7 +51,7 @@ export default function BottomNavigation() {
 
   return (
     <nav className="sticky bottom-0 z-20 shrink-0 animate-fadeIn md:static">
-      <div className="h-[68px] md:h-20 w-full bg-white/90 backdrop-blur-md border-t border-[#ECEEF2] px-2 pb-[env(safe-area-inset-bottom)] pt-1.5">
+      <div className="h-[68px] md:h-20 w-full border-t border-[#ECEEF2] bg-white/90 px-2 pb-[env(safe-area-inset-bottom)] pt-1.5 shadow-[0_-6px_18px_rgba(15,23,42,0.04)] backdrop-blur-md">
         <ul className="flex h-full items-center justify-between md:justify-center md:gap-16">
           {NAV_ITEMS.map((item) => {
             const isActive = active === item.id;
@@ -82,3 +82,4 @@ export default function BottomNavigation() {
     </nav>
   );
 }
+

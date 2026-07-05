@@ -8,6 +8,8 @@ interface TodayTasksProps {
 
 export default function TodayTasks({ onViewAll }: TodayTasksProps) {
   const [tasks, setTasks] = useState(TODAY_TASKS);
+  const completedCount = tasks.filter((task) => task.status === "done").length;
+  const completionRate = Math.round((completedCount / tasks.length) * 100);
 
   const handleToggle = (id: string) => {
     console.log("toggle task", id);
@@ -26,6 +28,18 @@ export default function TodayTasks({ onViewAll }: TodayTasksProps) {
             <path d="M9 6l6 6-6 6" />
           </svg>
         </button>
+      </div>
+
+      <div className="mt-3.5 rounded-[20px] border border-[#ECEEF2] bg-white px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[13px] font-semibold text-ink-title">전체 진행률</span>
+          <span className="shrink-0 text-[13px] font-bold text-primary">
+            {completedCount}/{tasks.length} 완료, {completionRate}%
+          </span>
+        </div>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#ECEEF2]">
+          <div className="h-full rounded-full bg-primary" style={{ width: `${completionRate}%` }} />
+        </div>
       </div>
 
       <ul className="mt-3.5 divide-y divide-[#ECEEF2] overflow-hidden rounded-[24px] border border-[#ECEEF2] bg-white md:min-h-0 md:flex-1 md:overflow-y-auto">

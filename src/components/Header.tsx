@@ -1,9 +1,9 @@
-import logo from "../assets/onetech-logo.png";
+﻿import logo from "../assets/onetech-logo.png";
 
 export default function Header() {
   return (
     <header className="h-[76px] md:h-20 shrink-0 flex items-center justify-between px-5 md:px-8 lg:px-10 border-b border-[#E5E8EB] animate-slideDown bg-white">
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-1.5">
         <img
           src={logo}
           alt="OneTech"
@@ -26,3 +26,4 @@ export default function Header() {
     </header>
   );
 }
+

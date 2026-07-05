@@ -14,21 +14,15 @@ export default function App() {
     <div className="mx-auto flex min-h-[100dvh] w-full max-w-[1200px] flex-col bg-white md:h-[100dvh] md:overflow-hidden">
       <Header />
 
-      <main className="grid flex-1 grid-cols-1 gap-3 px-5 py-3 md:min-h-0 md:grid-cols-[380px_minmax(0,1fr)] md:gap-6 md:overflow-hidden md:px-8 md:py-5 lg:grid-cols-[420px_minmax(0,1fr)] lg:gap-8 lg:px-10">
-        {/* Hero + 입력 카드: Desktop 좌측 고정폭, Mobile 상단 */}
-        <div className="flex min-w-0 flex-col gap-3 md:gap-4">
+      <main className="grid flex-1 grid-cols-1 gap-4 px-5 py-4 md:min-h-0 md:overflow-y-auto md:px-8 md:py-5 lg:grid-cols-[minmax(0,1.85fr)_minmax(300px,1fr)] lg:gap-8 lg:overflow-hidden lg:px-10">
+        <div className="flex min-w-0 flex-col overflow-hidden rounded-[32px] border border-[#ECEEF2] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
           <HeroCard onCreateProject={handleCreateProject} />
           <IdeaInputCard onStartWithAI={handleStartWithAI} />
         </div>
 
-        {/* 최근 프로젝트 + 오늘 할 일: 중간 화면은 세로, 넓은 화면은 2컬럼 */}
-        <div className="grid min-w-0 grid-cols-1 gap-3 md:min-h-0 md:gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(260px,320px)] xl:gap-8">
-          <div className="min-w-0">
-            <RecentProjects onViewAll={handleViewAll} />
-          </div>
-          <div className="min-w-0">
-            <TodayTasks onViewAll={handleViewAll} />
-          </div>
+        <div className="grid min-w-0 grid-cols-1 gap-4 md:min-h-0 md:gap-6">
+          <RecentProjects onViewAll={handleViewAll} />
+          <TodayTasks onViewAll={handleViewAll} />
         </div>
       </main>
 
