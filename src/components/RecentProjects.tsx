@@ -1,4 +1,4 @@
-import { RECENT_PROJECTS } from "../data/mockData";
+﻿import { RECENT_PROJECTS } from "../data/mockData";
 import ProjectListItem from "./ProjectListItem";
 
 interface RecentProjectsProps {
@@ -7,7 +7,7 @@ interface RecentProjectsProps {
 
 export default function RecentProjects({ onViewAll }: RecentProjectsProps) {
   return (
-    <section className="animate-fadeIn flex flex-col md:min-h-0 md:flex-1">
+    <section className="animate-fadeIn flex min-w-0 flex-col md:min-h-0 md:flex-1">
       <div className="flex shrink-0 items-center justify-between">
         <h2 className="text-[18px] font-bold text-ink-title">최근 프로젝트</h2>
         <button onClick={onViewAll} className="flex items-center gap-0.5 text-[13px] font-medium text-primary">

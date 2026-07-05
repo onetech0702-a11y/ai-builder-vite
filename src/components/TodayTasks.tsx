@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { TODAY_TASKS } from "../data/mockData";
 import TaskListItem from "./TaskListItem";
 
@@ -17,7 +17,7 @@ export default function TodayTasks({ onViewAll }: TodayTasksProps) {
   };
 
   return (
-    <section className="animate-fadeIn flex flex-col md:min-h-0 md:flex-1">
+    <section className="animate-fadeIn flex min-w-0 flex-col md:min-h-0 md:flex-1">
       <div className="flex shrink-0 items-center justify-between">
         <h2 className="text-[18px] font-bold text-ink-title">오늘 할 일</h2>
         <button onClick={onViewAll} className="flex items-center gap-0.5 text-[13px] font-medium text-primary">
