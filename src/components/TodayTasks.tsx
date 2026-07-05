@@ -8,8 +8,9 @@ interface TodayTasksProps {
 
 export default function TodayTasks({ onViewAll }: TodayTasksProps) {
   const [tasks, setTasks] = useState(TODAY_TASKS);
-  const completedCount = tasks.filter((task) => task.status === "done").length;
-  const completionRate = Math.round((completedCount / tasks.length) * 100);
+  const visibleTasks = tasks.slice(0, 5);
+  const completedCount = visibleTasks.filter((task) => task.status === "done").length;
+  const completionRate = Math.round((completedCount / visibleTasks.length) * 100);
 
   const handleToggle = (id: string) => {
     console.log("toggle task", id);
@@ -19,7 +20,7 @@ export default function TodayTasks({ onViewAll }: TodayTasksProps) {
   };
 
   return (
-    <section className="animate-fadeIn flex min-w-0 flex-col md:min-h-0 md:flex-1">
+    <section className="animate-fadeIn flex h-full min-w-0 flex-col md:min-h-0">
       <div className="flex shrink-0 items-center justify-between">
         <h2 className="text-[18px] font-bold text-ink-title">오늘 할 일</h2>
         <button onClick={onViewAll} className="flex items-center gap-0.5 text-[13px] font-medium text-primary">
@@ -30,11 +31,11 @@ export default function TodayTasks({ onViewAll }: TodayTasksProps) {
         </button>
       </div>
 
-      <div className="mt-3.5 rounded-[20px] border border-[#ECEEF2] bg-white px-4 py-3">
+      <div className="mt-3 rounded-t-[24px] border border-b-0 border-[#ECEEF2] bg-white px-4 py-2.5">
         <div className="flex items-center justify-between gap-3">
           <span className="text-[13px] font-semibold text-ink-title">전체 진행률</span>
           <span className="shrink-0 text-[13px] font-bold text-primary">
-            {completedCount}/{tasks.length} 완료, {completionRate}%
+            {completedCount}/{visibleTasks.length} 완료, {completionRate}%
           </span>
         </div>
         <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#ECEEF2]">
@@ -42,8 +43,8 @@ export default function TodayTasks({ onViewAll }: TodayTasksProps) {
         </div>
       </div>
 
-      <ul className="mt-3.5 divide-y divide-[#ECEEF2] overflow-hidden rounded-[24px] border border-[#ECEEF2] bg-white md:min-h-0 md:flex-1 md:overflow-y-auto">
-        {tasks.map((task) => (
+      <ul className="flex-1 divide-y divide-[#ECEEF2] overflow-hidden rounded-b-[24px] border border-[#ECEEF2] bg-white">
+        {visibleTasks.map((task) => (
           <TaskListItem key={task.id} task={task} onToggle={handleToggle} />
         ))}
       </ul>

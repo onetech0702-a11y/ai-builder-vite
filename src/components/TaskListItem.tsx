@@ -1,4 +1,4 @@
-import { TaskItem } from "../data/mockData";
+﻿import { TaskItem } from "../data/mockData";
 import StatusBadge from "./StatusBadge";
 
 interface TaskListItemProps {
@@ -8,7 +8,7 @@ interface TaskListItemProps {
 
 export default function TaskListItem({ task, onToggle }: TaskListItemProps) {
   return (
-    <li className="flex min-h-[60px] items-center gap-3 px-4 py-3 transition-colors duration-200 hover:bg-[#FAFBFC]">
+    <li className="flex min-h-[48px] items-center gap-3 px-4 py-2 transition-colors duration-200 hover:bg-[#FAFBFC] lg:min-h-[39px] lg:py-1.5">
       <button
         onClick={() => onToggle(task.id)}
         aria-label="할 일 완료 처리"
@@ -57,3 +57,4 @@ export default function TaskListItem({ task, onToggle }: TaskListItemProps) {
     </li>
   );
 }
+

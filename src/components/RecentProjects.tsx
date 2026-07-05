@@ -7,8 +7,8 @@ interface RecentProjectsProps {
 
 export default function RecentProjects({ onViewAll }: RecentProjectsProps) {
   return (
-    <section className="animate-fadeIn flex min-w-0 flex-col md:min-h-0 md:flex-1">
-      <div className="flex shrink-0 items-center justify-between">
+    <section className="animate-fadeIn min-w-0">
+      <div className="flex items-center justify-between">
         <h2 className="text-[18px] font-bold text-ink-title">최근 프로젝트</h2>
         <button onClick={onViewAll} className="flex items-center gap-0.5 text-[13px] font-medium text-primary">
           전체 보기
@@ -18,8 +18,8 @@ export default function RecentProjects({ onViewAll }: RecentProjectsProps) {
         </button>
       </div>
 
-      <ul className="mt-3.5 divide-y divide-[#ECEEF2] overflow-hidden rounded-[24px] border border-[#ECEEF2] bg-white md:min-h-0 md:flex-1 md:overflow-y-auto">
-        {RECENT_PROJECTS.map((project) => (
+      <ul className="mt-3.5 divide-y divide-[#ECEEF2] overflow-hidden rounded-[24px] border border-[#ECEEF2] bg-white">
+        {RECENT_PROJECTS.slice(0, 3).map((project) => (
           <ProjectListItem key={project.id} project={project} />
         ))}
       </ul>

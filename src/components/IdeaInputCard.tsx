@@ -1,11 +1,13 @@
 ﻿import { useEffect, useState } from "react";
 
 const PLACEHOLDER_EXAMPLES = [
-  "AI 주식 앱을 만들고 싶어요",
+  "AI 주식 분석 서비스",
   "예약 관리 시스템",
-  "쇼핑몰 서비스",
+  "쇼핑몰 플랫폼",
+  "병원 예약 앱",
   "운동 기록 앱",
-  "가계부 앱",
+  "음식 배달 서비스",
+  "AI 고객 상담 챗봇",
 ];
 
 const PLACEHOLDER_INTERVAL_MS = 2400;
@@ -25,19 +27,19 @@ export default function IdeaInputCard({ onStartWithAI }: IdeaInputCardProps) {
   }, []);
 
   return (
-    <section className="flex animate-slideUp flex-col rounded-b-[32px] bg-white p-6">
+    <section className="flex w-full flex-col animate-slideUp rounded-[24px] border border-[#ECEEF2] bg-white p-7 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
       <h2 className="text-[16px] font-bold text-ink-title">무엇을 만들고 싶나요?</h2>
 
       <textarea
         readOnly
         placeholder={`예: ${PLACEHOLDER_EXAMPLES[placeholderIndex]}`}
         key={placeholderIndex}
-        className="mt-3 h-[104px] w-full resize-none rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3 text-[14px] text-ink-title placeholder:text-ink-body placeholder:transition-opacity placeholder:duration-200 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        className="mt-3 h-[120px] w-full resize-none rounded-[18px] border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3 text-[14px] text-ink-title placeholder:text-ink-body placeholder:transition-opacity placeholder:duration-200 focus:outline-none focus:ring-2 focus:ring-primary/30"
       />
 
       <button
         onClick={onStartWithAI}
-        className="mt-3 flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-primary text-[14px] font-semibold text-white transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
+        className="mt-4 flex h-[56px] w-full items-center justify-center gap-2 rounded-2xl bg-primary text-[14px] font-semibold text-white transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
           <path d="M12 2l1.9 5.5L19.5 9l-5.6 1.5L12 16l-1.9-5.5L4.5 9l5.6-1.5L12 2z" />

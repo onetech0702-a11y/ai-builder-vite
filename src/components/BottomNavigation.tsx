@@ -50,36 +50,33 @@ export default function BottomNavigation() {
   const [active, setActive] = useState<NavId>("home");
 
   return (
-    <nav className="sticky bottom-0 z-20 shrink-0 animate-fadeIn md:static">
-      <div className="h-[68px] md:h-20 w-full border-t border-[#ECEEF2] bg-white/90 px-2 pb-[env(safe-area-inset-bottom)] pt-1.5 shadow-[0_-6px_18px_rgba(15,23,42,0.04)] backdrop-blur-md">
-        <ul className="flex h-full items-center justify-between md:justify-center md:gap-16">
-          {NAV_ITEMS.map((item) => {
-            const isActive = active === item.id;
-            return (
-              <li key={item.id} className="flex-1 md:flex-none">
-                <button
-                  onClick={() => setActive(item.id)}
-                  className="group flex w-full flex-col items-center gap-1 py-1 transition-colors duration-200 active:scale-95"
-                  aria-current={isActive ? "page" : undefined}
+    <nav className="fixed bottom-0 left-0 right-0 z-20 h-[84px] border-t border-[#ECEEF2] bg-white/90 pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_18px_rgba(15,23,42,0.04)] backdrop-blur-md animate-fadeIn">
+      <ul className="mx-auto grid h-full max-w-[760px] grid-cols-4 items-center px-2">
+        {NAV_ITEMS.map((item) => {
+          const isActive = active === item.id;
+          return (
+            <li key={item.id}>
+              <button
+                onClick={() => setActive(item.id)}
+                className="group flex w-full flex-col items-center gap-1 py-1 transition-colors duration-200 active:scale-95"
+                aria-current={isActive ? "page" : undefined}
+              >
+                <NavIcon id={item.id} active={isActive} />
+                <span
+                  className={
+                    "text-[11px] transition-colors duration-200 " +
+                    (isActive
+                      ? "text-primary font-semibold"
+                      : "text-[#9CA3AF] font-medium group-hover:text-[#6B7280]")
+                  }
                 >
-                  <NavIcon id={item.id} active={isActive} />
-                  <span
-                    className={
-                      "text-[11px] transition-colors duration-200 " +
-                      (isActive
-                        ? "text-primary font-semibold"
-                        : "text-[#9CA3AF] font-medium group-hover:text-[#6B7280]")
-                    }
-                  >
-                    {item.label}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
+                  {item.label}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </nav>
   );
 }
-
