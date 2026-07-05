@@ -1,3 +1,4 @@
+
 export type ProjectPhase = "기획 단계" | "개발 단계" | "테스트 단계";
 
 export interface Project {
@@ -7,8 +8,8 @@ export interface Project {
   progress: number;
   phase: ProjectPhase;
   icon: "folder" | "chart" | "calendar";
-  color: string;
-  bg: string;
+  colorFrom: string;
+  colorTo: string;
 }
 
 export const RECENT_PROJECTS: Project[] = [
@@ -19,8 +20,8 @@ export const RECENT_PROJECTS: Project[] = [
     progress: 75,
     phase: "기획 단계",
     icon: "folder",
-    color: "#4F6BFF",
-    bg: "#EEF2FF",
+    colorFrom: "#6D7CFF",
+    colorTo: "#4F6BFF",
   },
   {
     id: "stock",
@@ -29,8 +30,8 @@ export const RECENT_PROJECTS: Project[] = [
     progress: 45,
     phase: "개발 단계",
     icon: "chart",
-    color: "#22C55E",
-    bg: "#ECFDF3",
+    colorFrom: "#34D399",
+    colorTo: "#22C55E",
   },
   {
     id: "reservation",
@@ -39,8 +40,8 @@ export const RECENT_PROJECTS: Project[] = [
     progress: 20,
     phase: "기획 단계",
     icon: "calendar",
-    color: "#8B5CF6",
-    bg: "#F3EEFF",
+    colorFrom: "#A78BFA",
+    colorTo: "#8B5CF6",
   },
 ];
 

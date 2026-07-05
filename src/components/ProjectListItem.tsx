@@ -1,13 +1,13 @@
 import { Project } from "../data/mockData";
 import ProgressBar from "./ProgressBar";
 
-function ProjectIcon({ type, color }: { type: Project["icon"]; color: string }) {
+function ProjectIcon({ type }: { type: Project["icon"] }) {
   const common = {
     width: 20,
     height: 20,
     viewBox: "0 0 24 24",
     fill: "none" as const,
-    stroke: color,
+    stroke: "#FFFFFF",
     strokeWidth: 2,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
@@ -40,16 +40,16 @@ export default function ProjectListItem({ project }: { project: Project }) {
   return (
     <li className="flex min-h-[92px] items-center gap-3.5 px-4 py-3.5">
       <div
-        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl"
-        style={{ background: project.bg }}
+        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl shadow-[0_6px_14px_-4px_rgba(79,107,255,0.4)]"
+        style={{ background: `linear-gradient(135deg, ${project.colorFrom}, ${project.colorTo})` }}
       >
-        <ProjectIcon type={project.icon} color={project.color} />
+        <ProjectIcon type={project.icon} />
       </div>
 
       <div className="min-w-0 flex-1">
         <h3 className="text-[15px] font-semibold text-ink-title truncate">{project.name}</h3>
         <p className="mt-0.5 text-[12px] text-ink-body">마지막 수정 {project.updatedAt}</p>
-        <div className="mt-1.5 flex items-center gap-2 sm:hidden">
+        <div className="mt-2 flex items-center gap-2 sm:hidden">
           <div className="flex-1">
             <ProgressBar progress={project.progress} />
           </div>
@@ -65,7 +65,7 @@ export default function ProjectListItem({ project }: { project: Project }) {
         <ProgressBar progress={project.progress} />
       </div>
 
-      <span className="hidden sm:inline-flex shrink-0 rounded-badge bg-[#F3F4F6] px-2.5 py-1 text-[11px] font-medium text-ink-body">
+      <span className="hidden sm:inline-flex w-[76px] shrink-0 justify-center rounded-badge bg-[#F3F4F6] px-2.5 py-1 text-[11px] font-medium text-ink-body">
         {project.phase}
       </span>
 

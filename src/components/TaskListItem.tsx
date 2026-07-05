@@ -8,17 +8,17 @@ interface TaskListItemProps {
 
 export default function TaskListItem({ task, onToggle }: TaskListItemProps) {
   return (
-    <li className="flex min-h-[60px] items-center gap-3 px-4 py-3">
+    <li className="flex min-h-[60px] items-center gap-3 px-4 py-3 transition-colors duration-200 hover:bg-[#FAFBFC]">
       <button
         onClick={() => onToggle(task.id)}
         aria-label="할 일 완료 처리"
         className={
-          "flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors " +
+          "flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md border transition-colors " +
           (task.status === "done" ? "bg-primary border-primary" : "bg-white border-[#D1D5DB]")
         }
       >
         {task.status === "done" && (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M5 13l4 4L19 7" />
           </svg>
         )}
@@ -33,7 +33,12 @@ export default function TaskListItem({ task, onToggle }: TaskListItemProps) {
         {task.title}
       </span>
 
-      <StatusBadge status={task.status} />
+      <div className="hidden sm:flex w-[76px] shrink-0 justify-center">
+        <StatusBadge status={task.status} />
+      </div>
+      <div className="sm:hidden shrink-0">
+        <StatusBadge status={task.status} />
+      </div>
 
       <span className="hidden sm:inline shrink-0 w-12 text-right text-[12px] text-ink-body">
         {task.time}
@@ -41,7 +46,7 @@ export default function TaskListItem({ task, onToggle }: TaskListItemProps) {
 
       <button
         aria-label="더보기"
-        className="shrink-0 flex h-7 w-7 items-center justify-center rounded-full text-ink-body hover:bg-[#F3F4F6]"
+        className="shrink-0 flex h-7 w-7 items-center justify-center rounded-full text-ink-body hover:bg-[#ECEEF2]"
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <circle cx="5" cy="12" r="1.6" />

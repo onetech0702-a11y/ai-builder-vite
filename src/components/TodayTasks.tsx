@@ -17,8 +17,8 @@ export default function TodayTasks({ onViewAll }: TodayTasksProps) {
   };
 
   return (
-    <section className="animate-fadeIn">
-      <div className="flex items-center justify-between">
+    <section className="animate-fadeIn flex flex-col md:min-h-0 md:flex-1">
+      <div className="flex shrink-0 items-center justify-between">
         <h2 className="text-[18px] font-bold text-ink-title">오늘 할 일</h2>
         <button onClick={onViewAll} className="flex items-center gap-0.5 text-[13px] font-medium text-primary">
           전체 보기
@@ -28,7 +28,7 @@ export default function TodayTasks({ onViewAll }: TodayTasksProps) {
         </button>
       </div>
 
-      <ul className="mt-3.5 divide-y divide-[#ECEEF2] rounded-[24px] border border-[#ECEEF2] bg-white overflow-hidden">
+      <ul className="mt-3.5 divide-y divide-[#ECEEF2] overflow-hidden rounded-[24px] border border-[#ECEEF2] bg-white md:min-h-0 md:flex-1 md:overflow-y-auto">
         {tasks.map((task) => (
           <TaskListItem key={task.id} task={task} onToggle={handleToggle} />
         ))}

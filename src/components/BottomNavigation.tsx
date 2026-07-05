@@ -3,15 +3,17 @@ import { NAV_ITEMS, NavId } from "../data/mockData";
 
 function NavIcon({ id, active }: { id: NavId; active: boolean }) {
   const color = active ? "#4F6BFF" : "#9CA3AF";
+  const size = active ? 24 : 22;
   const common = {
-    width: 22,
-    height: 22,
+    width: size,
+    height: size,
     viewBox: "0 0 24 24",
     fill: "none" as const,
     stroke: color,
     strokeWidth: 2,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
+    className: "transition-all duration-200",
   };
   switch (id) {
     case "home":
@@ -48,20 +50,27 @@ export default function BottomNavigation() {
   const [active, setActive] = useState<NavId>("home");
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-20 flex justify-center animate-fadeIn">
-      <div className="h-20 md:h-[84px] w-full md:max-w-[820px] lg:max-w-[1200px] bg-white/90 backdrop-blur-md border-t border-[#ECEEF2] px-2 pb-[max(10px,env(safe-area-inset-bottom))] pt-2">
-        <ul className="flex items-center justify-between md:justify-center md:gap-16">
+    <nav className="sticky bottom-0 z-20 shrink-0 animate-fadeIn md:static">
+      <div className="h-[68px] md:h-20 w-full bg-white/90 backdrop-blur-md border-t border-[#ECEEF2] px-2 pb-[env(safe-area-inset-bottom)] pt-1.5">
+        <ul className="flex h-full items-center justify-between md:justify-center md:gap-16">
           {NAV_ITEMS.map((item) => {
             const isActive = active === item.id;
             return (
               <li key={item.id} className="flex-1 md:flex-none">
                 <button
                   onClick={() => setActive(item.id)}
-                  className="flex w-full flex-col items-center gap-1 py-1.5 transition-colors duration-200 active:scale-95"
+                  className="group flex w-full flex-col items-center gap-1 py-1 transition-colors duration-200 active:scale-95"
                   aria-current={isActive ? "page" : undefined}
                 >
                   <NavIcon id={item.id} active={isActive} />
-                  <span className={"text-[11px] font-medium " + (isActive ? "text-primary" : "text-[#9CA3AF]")}>
+                  <span
+                    className={
+                      "text-[11px] transition-colors duration-200 " +
+                      (isActive
+                        ? "text-primary font-semibold"
+                        : "text-[#9CA3AF] font-medium group-hover:text-[#6B7280]")
+                    }
+                  >
                     {item.label}
                   </span>
                 </button>

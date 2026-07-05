@@ -2,14 +2,14 @@ import logo from "../assets/onetech-logo.png";
 
 export default function Header() {
   return (
-    <header className="h-[72px] md:h-20 flex items-center justify-between px-5 md:px-8 lg:px-10 border-b border-[#E5E8EB] animate-slideDown bg-white">
+    <header className="h-[76px] md:h-20 shrink-0 flex items-center justify-between px-5 md:px-8 lg:px-10 border-b border-[#E5E8EB] animate-slideDown bg-white">
       <div className="flex items-center gap-2.5">
         <img
           src={logo}
           alt="OneTech"
-          className="h-9 w-9 md:h-11 md:w-11 shrink-0 object-contain animate-logoIn"
+          className="h-11 w-11 shrink-0 object-contain animate-logoIn"
         />
-        <span className="text-[24px] md:text-[26px] font-bold text-ink-title tracking-tight">
+        <span className="flex items-center text-[24px] md:text-[26px] font-bold text-ink-title tracking-tight leading-none">
           AI Builder
         </span>
       </div>
