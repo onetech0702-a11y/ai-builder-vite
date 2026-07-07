@@ -3,8 +3,8 @@ import ProgressBar from "./ProgressBar";
 
 function ProjectIcon({ type }: { type: Project["icon"] }) {
   const common = {
-    width: 20,
-    height: 20,
+    width: 18,
+    height: 18,
     viewBox: "0 0 24 24",
     fill: "none" as const,
     stroke: "#FFFFFF",
@@ -38,39 +38,39 @@ function ProjectIcon({ type }: { type: Project["icon"] }) {
 
 export default function ProjectListItem({ project }: { project: Project }) {
   return (
-    <li className="flex h-[92px] items-center gap-3.5 px-5">
+    <li className="flex items-start gap-3 px-4 py-3.5">
       <div
-        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl shadow-[0_6px_14px_-4px_rgba(79,107,255,0.4)]"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl shadow-[0_6px_14px_-4px_rgba(79,107,255,0.4)]"
         style={{ background: `linear-gradient(135deg, ${project.colorFrom}, ${project.colorTo})` }}
       >
         <ProjectIcon type={project.icon} />
       </div>
 
       <div className="min-w-0 flex-1">
-        <h3 className="truncate whitespace-nowrap text-[15px] font-semibold text-ink-title">{project.name}</h3>
-        <p className="mt-0.5 truncate whitespace-nowrap text-[13px] text-[#6B7280]">마지막 수정 {project.updatedAt}</p>
-      </div>
-
-      <div className="flex w-[170px] shrink-0 items-center justify-end gap-3 sm:w-[220px]">
-        <div className="w-20 shrink-0 sm:w-28">
-          <span className="block text-right text-[13px] font-bold text-primary">{project.progress}%</span>
-          <ProgressBar progress={project.progress} />
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-[14px] font-semibold text-ink-title truncate">{project.name}</h3>
+          <button
+            aria-label="더보기"
+            className="shrink-0 flex h-6 w-6 items-center justify-center rounded-full text-ink-body hover:bg-[#F3F4F6]"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="5" cy="12" r="1.6" />
+              <circle cx="12" cy="12" r="1.6" />
+              <circle cx="19" cy="12" r="1.6" />
+            </svg>
+          </button>
         </div>
+        <p className="mt-0.5 text-[11px] text-ink-body">마지막 수정 {project.updatedAt}</p>
 
-        <span className="hidden shrink-0 justify-center whitespace-nowrap rounded-badge bg-[#F3F4F6] px-2.5 py-1 text-[11px] font-medium text-ink-body sm:inline-flex sm:w-[76px]">
-          {project.phase}
-        </span>
-
-        <button
-          aria-label="더보기"
-          className="shrink-0 flex h-8 w-8 items-center justify-center rounded-full text-ink-body hover:bg-[#F3F4F6]"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <circle cx="5" cy="12" r="1.6" />
-            <circle cx="12" cy="12" r="1.6" />
-            <circle cx="19" cy="12" r="1.6" />
-          </svg>
-        </button>
+        <div className="mt-2 flex items-center gap-2">
+          <div className="flex-1">
+            <ProgressBar progress={project.progress} />
+          </div>
+          <span className="shrink-0 text-[11px] font-bold text-primary">{project.progress}%</span>
+          <span className="shrink-0 rounded-badge bg-[#F3F4F6] px-2 py-0.5 text-[10px] font-medium text-ink-body">
+            {project.phase}
+          </span>
+        </div>
       </div>
     </li>
   );
