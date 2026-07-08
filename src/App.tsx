@@ -671,9 +671,10 @@ const INTERVIEW_PROGRESS = [16, 33, 50, 66, 83, 100];
  */
 
 interface AIRecommendation {
-  answer: string;      // 화면에 표시하는 추천 답변
-  applyValue: string;  // 추천 적용 시 실제 입력/선택되는 값
-  reasons: string[];   // 추천 이유
+  answer: string;           // 화면에 표시하는 추천 답변
+  applyValue: string;       // 추천 적용 시 실제 입력/선택되는 값
+  reasons: string[];        // 추천 이유
+  extraQuestions?: string[]; // AI가 제안하는 추가 질문
 }
 
 type RecommendationSet = Record<InterviewField, AIRecommendation>;
@@ -848,6 +849,49 @@ const DEFAULT_RECOMMENDATIONS: RecommendationSet = {
   ]),
 };
 
+interface RecommendApiResponse {
+  success: boolean;
+  recommendation?: {
+    answer: string;
+    reason: string;
+    applyValue: string;
+    extraQuestions: string[];
+  };
+  error?: string;
+}
+
+async function fetchAIRecommendation(
+  idea: string,
+  step: number,
+  answers: InterviewAnswers
+): Promise<AIRecommendation> {
+  const stepDef = INTERVIEW_STEPS[step];
+  const response = await fetch("/api/interview/recommend", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      idea,
+      currentStep: step + 1,
+      question: stepDef.question,
+      options: stepDef.type === "choice" ? stepDef.options : undefined,
+      answers,
+    }),
+  });
+
+  if (!response.ok) throw new Error(`API error: ${response.status}`);
+
+  const data = (await response.json()) as RecommendApiResponse;
+  if (!data.success || !data.recommendation) throw new Error(data.error ?? "AI 추천 실패");
+
+  const { answer, reason, applyValue, extraQuestions } = data.recommendation;
+  return {
+    answer,
+    applyValue: applyValue || answer,
+    reasons: reason ? [reason] : [],
+    extraQuestions: extraQuestions ?? [],
+  };
+}
+
 function getMockRecommendation(idea: string, step: number): AIRecommendation {
   const field = INTERVIEW_STEPS[step].field;
   const normalized = idea.trim();
@@ -877,6 +921,8 @@ function InterviewPage() {
   const [answers, setAnswers] = useState<InterviewAnswers>(initial.answers);
   const [showHelp, setShowHelp] = useState(false);
   const [recommendation, setRecommendation] = useState<AIRecommendation | null>(null);
+  const [isRecommending, setIsRecommending] = useState(false);
+  const [recommendNotice, setRecommendNotice] = useState("");
 
   const step = INTERVIEW_STEPS[stepIndex];
   const isLastStep = stepIndex === INTERVIEW_STEPS.length - 1;
@@ -898,6 +944,7 @@ function InterviewPage() {
     setStepIndex(nextIndex);
     setShowHelp(false);
     setRecommendation(null);
+    setRecommendNotice("");
     window.scrollTo(0, 0);
   };
 
@@ -923,11 +970,37 @@ function InterviewPage() {
   };
 
   const handleShowHelp = () => setShowHelp(true);
-  const handleRecommend = () => setRecommendation(getMockRecommendation(idea, stepIndex));
+
+  const handleRecommend = async () => {
+    if (isRecommending) return;
+    setIsRecommending(true);
+    setRecommendation(null);
+    setRecommendNotice("");
+    try {
+      const result = await fetchAIRecommendation(idea, stepIndex, answers);
+      setRecommendation(result);
+    } catch {
+      // Fallback: API 실패 시 Mock 추천 표시
+      setRecommendation(getMockRecommendation(idea, stepIndex));
+      setRecommendNotice("AI 추천 연결에 실패했습니다. 임시 추천을 표시합니다.");
+    } finally {
+      setIsRecommending(false);
+    }
+  };
 
   const handleApplyRecommendation = () => {
     if (!recommendation) return;
-    const applied = { ...answers, [step.field]: recommendation.applyValue };
+
+    let valueToApply = recommendation.applyValue;
+    if (step.type === "choice" && step.options && !step.options.includes(valueToApply)) {
+      const matched = step.options.find(
+        (option) => valueToApply.includes(option) || recommendation.answer.includes(option)
+      );
+      if (matched) valueToApply = matched;
+    }
+    if (valueToApply.trim().length === 0) return; // 거부 응답(applyValue 없음)은 적용하지 않음
+
+    const applied = { ...answers, [step.field]: valueToApply };
     setAnswers(applied);
     persist(stepIndex + 1, applied);
   };
@@ -1002,7 +1075,8 @@ function InterviewPage() {
             </button>
             <button
               onClick={handleRecommend}
-              className="flex h-[42px] flex-1 items-center justify-center gap-1.5 rounded-2xl border border-primary/30 bg-primary/5 text-[13px] font-semibold text-primary transition-colors duration-200 hover:bg-primary/10"
+              disabled={isRecommending}
+              className="flex h-[42px] flex-1 items-center justify-center gap-1.5 rounded-2xl border border-primary/30 bg-primary/5 text-[13px] font-semibold text-primary transition-colors duration-200 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
                 <path d="M12 2l1.9 5.5L19.5 9l-5.6 1.5L12 16l-1.9-5.5L4.5 9l5.6-1.5L12 2z" />
@@ -1016,6 +1090,23 @@ function InterviewPage() {
             <div className="mt-3 animate-fadeIn rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5">
               <h3 className="text-[12px] font-semibold text-ink-body">안내</h3>
               <p className="mt-1 text-[14px] leading-relaxed text-ink-title">{step.help}</p>
+            </div>
+          )}
+
+          {/* AI 추천 로딩 */}
+          {isRecommending && (
+            <div className="mt-3 animate-fadeIn rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3.5">
+              <p className="flex items-center gap-2 text-[13px] font-medium text-primary">
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary/30 border-t-primary" aria-hidden="true" />
+                AI가 추천을 만드는 중입니다...
+              </p>
+            </div>
+          )}
+
+          {/* AI 추천 실패 안내 */}
+          {recommendNotice && (
+            <div className="mt-3 animate-fadeIn rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3">
+              <p className="text-[13px] leading-relaxed text-ink-body">{recommendNotice}</p>
             </div>
           )}
 
@@ -1037,6 +1128,16 @@ function InterviewPage() {
                   </li>
                 ))}
               </ul>
+              {recommendation.extraQuestions && recommendation.extraQuestions.length > 0 && (
+                <div className="mt-3 border-t border-primary/15 pt-3">
+                  <h4 className="text-[12px] font-semibold text-ink-body">추가로 생각해볼 질문</h4>
+                  <ul className="mt-1 flex flex-col gap-1">
+                    {recommendation.extraQuestions.map((q) => (
+                      <li key={q} className="text-[13px] leading-relaxed text-ink-title">· {q}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <button
                 onClick={handleApplyRecommendation}
                 className="mt-3 flex h-[42px] w-full items-center justify-center rounded-2xl bg-primary text-[13px] font-semibold text-white transition-transform duration-200 hover:scale-[1.01] active:scale-[0.99]"
