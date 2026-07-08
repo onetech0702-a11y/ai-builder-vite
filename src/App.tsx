@@ -898,6 +898,7 @@ function InterviewPage() {
     setStepIndex(nextIndex);
     setShowHelp(false);
     setRecommendation(null);
+    window.scrollTo(0, 0);
   };
 
   const handleNext = () => {
@@ -1331,11 +1332,24 @@ function AppBottomNavigation() {
   );
 }
 
+/* ---------- 페이지 이동 시 스크롤 맨 위로 ---------- */
+
+function ScrollToTop() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+
+  return null;
+}
+
 /* ---------- App (라우터 구성) ---------- */
 
 export default function App() {
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <div className="mx-auto flex min-h-[100dvh] w-full flex-col bg-white lg:max-w-[1440px] xl:px-4">
         <AppHeader />
 
