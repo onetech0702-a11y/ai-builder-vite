@@ -1,6 +1,6 @@
 ﻿import { useEffect, useRef, useState } from "react";
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from "react-router-dom";
-import Header from "./components/Header";
+import logo from "./assets/onetech-logo.png";
 import HeroCard from "./components/HeroCard";
 import RecentProjects from "./components/RecentProjects";
 import TodayTasks from "./components/TodayTasks";
@@ -8,6 +8,7 @@ import TodayTasks from "./components/TodayTasks";
 /* ---------------------------------------------
  * 기능 1: 라우팅 기반 구축
  * 기능 2: 아이디어 입력창 (자유 입력 + Auto Resize + localStorage)
+ * 개선: 웹(PC) 반응형 — 데스크톱은 헤더 메뉴, 모바일은 하단 탭바
  * 이 파일 하나만 교체하면 됩니다. (src/App.tsx)
  * --------------------------------------------- */
 
@@ -136,7 +137,60 @@ function PlaceholderPage({ title, description }: { title: string; description: s
   );
 }
 
-/* ---------- Bottom Navigation (라우팅 연동) ---------- */
+/* ---------- Header (데스크톱: 상단 메뉴 포함) ---------- */
+
+function AppHeader() {
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+
+  return (
+    <header className="h-[76px] md:h-20 shrink-0 flex items-center justify-between px-5 md:px-8 lg:px-10 border-b border-[#E5E8EB] animate-slideDown bg-white">
+      <div className="flex items-center gap-2">
+        <img src={logo} alt="OneTech" className="h-12 w-12 shrink-0 object-contain animate-logoIn" />
+        <span className="flex items-center text-[24px] md:text-[26px] font-bold text-ink-title tracking-tight leading-none">
+          AI Builder
+        </span>
+      </div>
+
+      {/* 데스크톱 전용 네비게이션 (모바일은 하단 탭바 사용) */}
+      <nav className="hidden md:block" aria-label="주 메뉴">
+        <ul className="flex items-center gap-2 lg:gap-4">
+          {NAV_ROUTES.map((item) => {
+            const isActive = pathname === item.path;
+            return (
+              <li key={item.id}>
+                <button
+                  onClick={() => navigate(item.path)}
+                  aria-current={isActive ? "page" : undefined}
+                  className={
+                    "rounded-badge px-4 py-2 text-[15px] transition-colors duration-200 " +
+                    (isActive
+                      ? "bg-primary/10 font-semibold text-primary"
+                      : "font-medium text-ink-body hover:bg-[#F3F4F6] hover:text-ink-title")
+                  }
+                >
+                  {item.label}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+
+      <button
+        aria-label="프로필"
+        className="h-9 w-9 md:h-10 md:w-10 rounded-full bg-[#F3F4F6] flex items-center justify-center text-ink-title"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+          <circle cx="12" cy="8" r="4" />
+          <path d="M4 20c0-4 3.6-6 8-6s8 2 8 6" />
+        </svg>
+      </button>
+    </header>
+  );
+}
+
+/* ---------- Bottom Navigation (모바일 전용, 라우팅 연동) ---------- */
 
 function NavIcon({ id, active }: { id: NavId; active: boolean }) {
   const color = active ? "#4F6BFF" : "#9CA3AF";
@@ -188,13 +242,13 @@ function AppBottomNavigation() {
   const navigate = useNavigate();
 
   return (
-    <nav className="sticky bottom-0 z-20 shrink-0 animate-fadeIn md:static">
-      <div className="h-[68px] md:h-20 w-full bg-white/90 backdrop-blur-md border-t border-[#ECEEF2] shadow-[0_-4px_12px_rgba(15,23,42,0.04)] px-2 pb-[env(safe-area-inset-bottom)] pt-1.5">
-        <ul className="flex h-full items-center justify-between md:justify-center md:gap-16">
+    <nav className="sticky bottom-0 z-20 shrink-0 animate-fadeIn md:hidden">
+      <div className="h-[68px] w-full bg-white/90 backdrop-blur-md border-t border-[#ECEEF2] shadow-[0_-4px_12px_rgba(15,23,42,0.04)] px-2 pb-[env(safe-area-inset-bottom)] pt-1.5">
+        <ul className="flex h-full items-center justify-between">
           {NAV_ROUTES.map((item) => {
             const isActive = pathname === item.path;
             return (
-              <li key={item.id} className="flex-1 md:flex-none">
+              <li key={item.id} className="flex-1">
                 <button
                   onClick={() => navigate(item.path)}
                   className="group flex w-full flex-col items-center gap-1 py-1 transition-colors duration-200 active:scale-95"
@@ -226,8 +280,8 @@ function AppBottomNavigation() {
 export default function App() {
   return (
     <BrowserRouter>
-      <div className="mx-auto flex min-h-[100dvh] w-full flex-col bg-white md:h-[100dvh] md:overflow-hidden md:max-w-[820px] lg:max-w-[1200px]">
-        <Header />
+      <div className="mx-auto flex min-h-[100dvh] w-full flex-col bg-white md:h-[100dvh] md:overflow-hidden lg:max-w-[1440px] xl:px-4">
+        <AppHeader />
 
         <Routes>
           <Route path="/" element={<HomePage />} />
