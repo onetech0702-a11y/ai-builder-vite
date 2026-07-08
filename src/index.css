@@ -25,3 +25,10 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* iOS Safari 입력창 자동 확대 방지 */
+input,
+textarea,
+select {
+  font-size: 16px;
+}
