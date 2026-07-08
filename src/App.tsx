@@ -24,6 +24,65 @@ import { RECENT_PROJECTS, Project, TODAY_TASKS, TaskItem, TaskStatus } from "./d
 
 const IDEA_STORAGE_KEY = "ai-builder-draft-idea";
 const PROJECT_STORAGE_KEY = "ai-builder-project";
+const CURRENT_PROJECT_KEY = "ai-builder-current-project";
+const PROJECTS_LIST_KEY = "ai-builder-projects";
+const PROJECTS_LIST_MAX = 10;
+
+interface UserProject {
+  id: string;
+  idea: string;
+  title: string;
+  status: string;
+  step: string;
+  createdAt: string;
+  updatedAt: string;
+  progress: number;
+}
+
+function createUserProject(idea: string): UserProject {
+  const now = new Date().toISOString();
+  return {
+    id: `project_${Date.now()}`,
+    idea,
+    title: idea,
+    status: "interview",
+    step: "ai-interview",
+    createdAt: now,
+    updatedAt: now,
+    progress: 5,
+  };
+}
+
+function saveUserProject(project: UserProject) {
+  localStorage.setItem(CURRENT_PROJECT_KEY, JSON.stringify(project));
+
+  let list: UserProject[] = [];
+  try {
+    list = JSON.parse(localStorage.getItem(PROJECTS_LIST_KEY) ?? "[]") as UserProject[];
+    if (!Array.isArray(list)) list = [];
+  } catch {
+    list = [];
+  }
+  localStorage.setItem(PROJECTS_LIST_KEY, JSON.stringify([project, ...list].slice(0, PROJECTS_LIST_MAX)));
+}
+
+function loadCurrentIdea(): string {
+  try {
+    const current = localStorage.getItem(CURRENT_PROJECT_KEY);
+    if (current) {
+      const parsed = JSON.parse(current) as { idea?: string };
+      if (parsed.idea) return parsed.idea;
+    }
+    const legacy = localStorage.getItem(PROJECT_STORAGE_KEY);
+    if (legacy) {
+      const parsed = JSON.parse(legacy) as { idea?: string };
+      if (parsed.idea) return parsed.idea;
+    }
+  } catch {
+    return "";
+  }
+  return "";
+}
 
 /* ---------- Navigation 정의 ---------- */
 
@@ -325,7 +384,10 @@ function HomePage() {
   const navigate = useNavigate();
 
   const handleCreateProject = () => navigate("/project/create");
-  const handleStartWithAI = (idea: string) => navigate("/project/create", { state: { idea } });
+  const handleStartWithAI = (idea: string) => {
+    saveUserProject(createUserProject(idea));
+    navigate("/project/interview");
+  };
   const handleSelectProject = (id: string) => navigate(`/project/${id}`);
   const handleViewAll = () => navigate("/projects");
 
@@ -386,14 +448,17 @@ function ProjectCreatePage() {
   const handleStart = () => {
     if (!projectType || isStartDisabled) return;
 
+    const trimmedIdea = projectType === "idea" ? idea.trim() : "";
+
     const project = {
       projectType,
-      idea: projectType === "idea" ? idea.trim() : "",
+      idea: trimmedIdea,
       createdAt: new Date().toISOString(),
       status: "interview",
       step: 1,
     };
     localStorage.setItem(PROJECT_STORAGE_KEY, JSON.stringify(project));
+    saveUserProject(createUserProject(trimmedIdea));
     navigate("/project/interview");
   };
 
@@ -487,13 +552,50 @@ function ProjectCreatePage() {
   );
 }
 
-/* ---------- 페이지: AI 인터뷰 (준비중) ---------- */
+/* ---------- 페이지: AI 인터뷰 ---------- */
 
 function InterviewPage() {
+  const idea = loadCurrentIdea();
+  const [answer, setAnswer] = useState("");
+
+  const handleNext = () => {
+    console.log("AI 인터뷰 - 다음 클릭:", { idea, answer });
+  };
+
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-2 px-5 py-3 animate-fadeIn">
-      <h1 className="text-[22px] font-bold text-ink-title">AI 인터뷰</h1>
-      <p className="text-[14px] text-ink-body">준비중</p>
+    <main className="flex flex-1 flex-col px-5 py-4 animate-fadeIn md:items-center md:py-10">
+      <div className="flex w-full flex-col gap-4 md:max-w-[680px]">
+        <section className="rounded-[24px] border border-[#ECEEF2] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:p-8">
+          <h1 className="text-[24px] font-bold text-ink-title">AI 인터뷰</h1>
+          <p className="mt-2 text-[15px] leading-relaxed text-ink-body">
+            입력한 아이디어를 바탕으로 프로젝트 기획을 시작합니다.
+          </p>
+
+          <div className="mt-6 rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5">
+            <h2 className="text-[13px] font-semibold text-ink-body">입력한 아이디어</h2>
+            <p className="mt-1 whitespace-pre-wrap text-[15px] leading-relaxed text-ink-title">
+              {idea.trim().length > 0 ? idea : "아직 입력한 아이디어가 없습니다."}
+            </p>
+          </div>
+
+          <div className="mt-6">
+            <h2 className="text-[15px] font-semibold text-ink-title">이 서비스는 누구를 위한 서비스인가요?</h2>
+            <textarea
+              value={answer}
+              onChange={(e) => setAnswer(e.target.value)}
+              placeholder="예: 초보 투자자, 미용실 사장님, 헬스장 회원 등"
+              className="mt-3 min-h-[100px] w-full resize-none rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-[14px] leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </div>
+
+          <button
+            onClick={handleNext}
+            className="mt-4 flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)] transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
+          >
+            다음
+          </button>
+        </section>
+      </div>
     </main>
   );
 }
