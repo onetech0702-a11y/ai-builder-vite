@@ -32,3 +32,12 @@ textarea,
 select {
   font-size: 16px;
 }
+
+/* 페이지 세로 스크롤 정상화 (인터뷰 등 긴 화면) */
+html,
+body,
+#root {
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+}

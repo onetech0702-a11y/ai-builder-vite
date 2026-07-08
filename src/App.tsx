@@ -411,7 +411,7 @@ function HomePage() {
   const handleViewAll = () => navigate("/projects");
 
   return (
-    <main className="flex flex-1 flex-col gap-3 px-5 py-3 md:min-h-0 md:flex-row md:gap-6 md:overflow-hidden md:px-8 md:py-5 lg:gap-8 lg:px-10">
+    <main className="flex flex-1 flex-col gap-3 px-5 py-3 pb-[90px] md:h-[calc(100dvh-5rem)] md:min-h-0 md:flex-row md:gap-6 md:overflow-hidden md:px-8 md:py-5 md:pb-5 lg:gap-8 lg:px-10">
       {/* 좌측 65%(Desktop): Hero + 입력카드를 하나의 연결된 카드로 */}
       <div className="flex shrink-0 flex-col md:min-h-0 md:w-[58%] md:shrink-0 lg:w-[65%]">
         <div className="flex flex-1 flex-col overflow-hidden rounded-[28px] border border-[#ECEEF2] shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
@@ -487,7 +487,7 @@ function ProjectCreatePage() {
   ];
 
   return (
-    <main className="flex flex-1 flex-col px-5 py-4 animate-fadeIn md:items-center md:py-10">
+    <main className="flex flex-1 flex-col px-5 pt-4 pb-[140px] animate-fadeIn md:items-center md:pt-10 md:pb-12">
       <div className="flex w-full flex-col gap-4 md:max-w-[680px]">
         <section className="rounded-[24px] border border-[#ECEEF2] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:p-8">
           <h1 className="text-[24px] font-bold text-ink-title">새 프로젝트 만들기</h1>
@@ -612,7 +612,7 @@ const INTERVIEW_STEPS: InterviewStepDef[] = [
     type: "text",
     placeholder: "예: 초보 투자자, 미용실 사장님, 헬스장 회원 등",
     required: true,
-    help: "대상 사용자는 서비스의 기능, 디자인, 말투까지 정하는 기준입니다. 이 서비스가 해결하는 문제를 가장 자주 겪는 사람이 누구인지 떠올려 보세요. 아래 추천을 참고하세요.",
+    help: "대상 사용자는 이 서비스를 가장 자주 쓰는 사람입니다. 대상 사용자가 명확해야 기능과 디자인 방향을 정할 수 있습니다.",
   },
   {
     field: "coreFeatures",
@@ -621,7 +621,7 @@ const INTERVIEW_STEPS: InterviewStepDef[] = [
     type: "text",
     placeholder: "예: 예약 관리, 고객 관리, 알림, 결제, 관리자 페이지 등",
     required: true,
-    help: "핵심 기능은 사용자가 이 서비스를 쓰는 가장 큰 이유 1~3가지입니다. 처음부터 모든 기능을 넣기보다, 없으면 서비스가 성립하지 않는 기능만 골라 보세요. 아래 추천을 참고하세요.",
+    help: "핵심 기능은 이 서비스가 반드시 해결해야 하는 주요 기능입니다. 처음부터 많은 기능을 넣기보다 MVP에 필요한 기능만 정하는 것이 좋습니다.",
   },
   {
     field: "platform",
@@ -630,7 +630,7 @@ const INTERVIEW_STEPS: InterviewStepDef[] = [
     type: "choice",
     options: ["모바일 앱", "모바일 웹", "PC 웹", "모두 필요"],
     required: true,
-    help: "어디에서 쓰는지에 따라 개발 방식과 비용, 출시 속도가 크게 달라집니다. 이동 중에 쓰는 서비스라면 모바일, 업무용이라면 PC 비중이 높습니다. 아래 추천을 참고하세요.",
+    help: "플랫폼은 사용자가 서비스를 사용하는 환경입니다. 빠른 출시가 목표라면 모바일 웹부터 시작하는 것이 좋습니다.",
   },
   {
     field: "auth",
@@ -639,7 +639,7 @@ const INTERVIEW_STEPS: InterviewStepDef[] = [
     type: "choice",
     options: ["필요합니다", "필요 없습니다", "잘 모르겠습니다"],
     required: true,
-    help: "로그인은 사용자의 정보를 저장하거나 프로필, 주문내역, 예약내역 등을 관리할 때 필요합니다. 로그인이 필요 없는 경우도 있습니다. 아래 추천을 참고하세요.",
+    help: "로그인은 사용자별 데이터를 저장해야 할 때 필요합니다. 기록, 즐겨찾기, 결제, 알림 기능이 있으면 로그인을 추천합니다.",
   },
   {
     field: "payment",
@@ -648,7 +648,7 @@ const INTERVIEW_STEPS: InterviewStepDef[] = [
     type: "choice",
     options: ["필요합니다", "필요 없습니다", "나중에 추가할 예정입니다", "잘 모르겠습니다"],
     required: true,
-    help: "결제는 유료 상품, 구독, 예약금처럼 돈이 오가는 기능이 있을 때 필요합니다. 결제 연동은 심사와 개발 기간이 추가로 들어가는 영역입니다. 아래 추천을 참고하세요.",
+    help: "결제는 수익화와 관련된 기능입니다. MVP 단계에서는 결제를 나중으로 미루는 것이 더 빠르게 출시할 수 있습니다.",
   },
   {
     field: "additional",
@@ -657,88 +657,202 @@ const INTERVIEW_STEPS: InterviewStepDef[] = [
     type: "text",
     placeholder: "예: 토스처럼 깔끔하게, 카카오톡 알림, 관리자 통계, 참고 사이트 URL 등",
     required: false,
-    help: "참고하고 싶은 서비스나 원하는 느낌을 알려주면 기획의 정확도가 올라갑니다. 없다면 비워두고 완료해도 됩니다. 아래 추천을 참고하세요.",
+    help: "추가 기능은 서비스 완성도를 높이는 보조 기능입니다. 알림, 통계, 관리자 페이지, 문의하기 등이 여기에 해당합니다.",
   },
 ];
 
 const INTERVIEW_PROGRESS = [16, 33, 50, 66, 83, 100];
 
-/* ---------- AI 추천 (Mock) ----------
- * 나중에 Claude API 연결 시 이 함수 내부만 API 호출로 교체하면 된다.
+/* ---------- Mock AI Recommendation Engine ----------
+ * idea 키워드 + 현재 step을 기반으로 추천을 생성한다.
+ * 추후 AI 연결 시 getMockRecommendation(idea, step)을
+ * getAIRecommendation(idea, step, answers) API 호출로 교체하면 된다.
  * 반환 형태(AIRecommendation)는 유지한다.
  */
 
 interface AIRecommendation {
-  answer: string;
-  summary: string;
-  reasons: string[];
+  answer: string;      // 화면에 표시하는 추천 답변
+  applyValue: string;  // 추천 적용 시 실제 입력/선택되는 값
+  reasons: string[];   // 추천 이유
 }
 
-function getAIRecommendation(field: InterviewField, idea: string): AIRecommendation {
-  const ideaLabel = idea.trim().length > 0 ? `"${idea.trim()}"` : "이 프로젝트";
+type RecommendationSet = Record<InterviewField, AIRecommendation>;
 
-  switch (field) {
-    case "targetUser":
-      return {
-        answer: "해당 분야를 처음 시작하는 초보 사용자",
-        summary: `${ideaLabel}는 좁고 명확한 초기 사용자층부터 시작하는 것을 추천합니다.`,
-        reasons: [
-          "초보 사용자는 기존 서비스에 만족하지 못해 새 서비스를 시도할 가능성이 높습니다",
-          "대상이 좁을수록 기능 우선순위가 명확해집니다",
-          "초기 피드백을 빠르게 받아 개선할 수 있습니다",
-        ],
-      };
-    case "coreFeatures":
-      return {
-        answer: "핵심 문제를 해결하는 기능 1개, 목록/상세 화면, 알림",
-        summary: "MVP에서는 핵심 가치를 전달하는 최소 기능만 담는 것을 추천합니다.",
-        reasons: [
-          "기능이 적을수록 빠르게 출시하고 검증할 수 있습니다",
-          "사용자 반응을 본 뒤 기능을 추가하는 것이 안전합니다",
-          "관리자 페이지 등은 다음 단계에서 붙여도 늦지 않습니다",
-        ],
-      };
-    case "platform":
-      return {
-        answer: "모바일 웹",
-        summary: "모바일 웹(React Web)으로 시작하는 것을 추천합니다.",
-        reasons: [
-          "가장 빠르게 출시할 수 있습니다",
-          "모바일과 PC 모두 대응 가능합니다",
-          "앱 심사 없이 바로 배포되어 비용이 절감됩니다",
-          "추후 앱으로 전환할 수 있습니다",
-        ],
-      };
-    case "auth":
-      return {
-        answer: "필요합니다",
-        summary: "로그인 기능을 넣는 것을 추천합니다.",
-        reasons: [
-          "관심 항목, 기록 같은 개인 데이터를 저장하려면 로그인이 필요합니다",
-          "알림, 즐겨찾기 기능의 기반이 됩니다",
-          "재방문 사용자를 관리할 수 있습니다",
-        ],
-      };
-    case "payment":
-      return {
-        answer: "나중에 추가할 예정입니다",
-        summary: "초기 MVP에서는 결제를 넣지 않는 것을 추천합니다.",
-        reasons: [
-          "먼저 사용자를 확보한 후 프리미엄 기능으로 추가하는 것이 좋습니다",
-          "결제 연동은 심사와 개발 기간이 추가로 필요합니다",
-          "무료로 시작하면 초기 진입 장벽이 낮아집니다",
-        ],
-      };
-    case "additional":
-      return {
-        answer: "토스처럼 깔끔한 UI, 카카오톡 알림 연동",
-        summary: "많이 참고되는 방향을 추천으로 제시합니다.",
-        reasons: [
-          "깔끔한 UI 기준을 정해두면 디자인 결정이 빨라집니다",
-          "카카오톡 알림은 국내 사용자 재방문율을 높이는 대표 기능입니다",
-        ],
-      };
-  }
+function rec(answer: string, reasons: string[], applyValue?: string): AIRecommendation {
+  return { answer, applyValue: applyValue ?? answer, reasons };
+}
+
+const RECOMMENDATION_PRESETS: { keywords: string[]; set: RecommendationSet }[] = [
+  {
+    keywords: ["독서", "책"],
+    set: {
+      targetUser: rec("책을 꾸준히 읽고 싶은 사람, 독서 습관을 만들고 싶은 사용자", [
+        "독서앱은 읽은 책을 기록하고 독서 루틴을 만드는 사용자가 주로 사용합니다",
+      ]),
+      coreFeatures: rec("독서 기록, 읽은 책 목록, 독서 목표 설정, 메모, 책 추천", [
+        "읽은 책을 기록으로 남기는 것이 독서앱의 핵심 가치입니다",
+        "목표와 메모가 있으면 독서 습관이 이어집니다",
+      ]),
+      platform: rec("모바일 앱", [
+        "독서 기록은 책을 읽은 직후 바로 작성하는 경우가 많아 모바일 앱이 적합합니다",
+      ]),
+      auth: rec("필요합니다", ["사용자의 독서 기록, 메모, 목표를 저장해야 하기 때문입니다"]),
+      payment: rec("나중에 추가할 예정입니다", [
+        "초기에는 무료 기록 기능으로 사용자를 모으고, 이후 프리미엄 책 추천이나 통계 기능으로 수익화하는 것이 좋습니다",
+      ]),
+      additional: rec("월간 독서 리포트, 독서 streak, 인상 깊은 문장 저장, AI 책 추천", [
+        "기록이 쌓일수록 가치가 커지는 기능들입니다",
+      ]),
+    },
+  },
+  {
+    keywords: ["주식", "투자"],
+    set: {
+      targetUser: rec("초보 투자자, 미국주식에 관심 있는 개인 투자자", [
+        "정보가 어려워 진입하지 못하는 초보 투자자가 가장 큰 잠재 사용자층입니다",
+      ]),
+      coreFeatures: rec("관심종목, 종목 검색, 뉴스 요약, 용어 설명, 포트폴리오 기록", [
+        "초보 투자자는 어려운 정보를 쉽게 정리해주는 기능을 가장 필요로 합니다",
+      ]),
+      platform: rec("모바일 웹 또는 모바일 앱", [
+        "시세 확인과 기록은 이동 중 모바일 사용 비중이 높습니다",
+        "모바일 웹으로 시작하면 더 빠르게 출시할 수 있습니다",
+      ], "모바일 웹"),
+      auth: rec("필요합니다", ["관심종목, 포트폴리오 기록을 사용자별로 저장해야 합니다"]),
+      payment: rec("나중에 추가할 예정입니다", [
+        "먼저 무료 기능으로 사용자를 확보한 후 프리미엄 분석 기능으로 수익화하는 것이 좋습니다",
+      ]),
+      additional: rec("AI 뉴스 요약, 초보자용 투자 용어 설명, 관심종목 알림", [
+        "초보 투자자의 재방문을 만드는 대표 기능들입니다",
+      ]),
+    },
+  },
+  {
+    keywords: ["예약"],
+    set: {
+      targetUser: rec("1인샵 사장님, 미용실/네일샵/속눈썹샵 운영자", [
+        "예약 관리가 가장 절실한 사용자는 혼자 매장을 운영하는 사장님입니다",
+      ]),
+      coreFeatures: rec("예약 등록, 예약 변경, 고객 관리, 알림, 관리자 페이지", [
+        "예약의 등록·변경·알림이 서비스의 핵심 흐름입니다",
+      ]),
+      platform: rec("모바일 웹", [
+        "사장님과 고객 모두 설치 없이 링크로 바로 사용할 수 있습니다",
+      ]),
+      auth: rec("필요합니다", ["매장별 예약과 고객 정보를 구분해서 저장해야 합니다"]),
+      payment: rec("필요 없습니다", [
+        "예약 자체는 결제 없이 운영하는 매장이 많고, 현장 결제로 시작할 수 있습니다",
+      ]),
+      additional: rec("카카오톡 알림, 예약 리마인더, 고객 메모, 노쇼 관리", [
+        "예약 서비스의 만족도를 결정하는 운영 기능들입니다",
+      ]),
+    },
+  },
+  {
+    keywords: ["운동", "헬스", "피트니스"],
+    set: {
+      targetUser: rec("운동 기록을 남기고 싶은 일반 사용자", [
+        "전문 선수보다 습관을 만들고 싶은 일반 사용자가 훨씬 많습니다",
+      ]),
+      coreFeatures: rec("운동 기록, 루틴 관리, 목표 설정, 체중 변화 기록, 통계", [
+        "기록과 루틴이 운동앱 사용을 지속시키는 핵심입니다",
+      ]),
+      platform: rec("모바일 앱", ["운동 직후 바로 기록하는 사용 패턴에 모바일 앱이 적합합니다"]),
+      auth: rec("필요합니다", ["운동 기록과 체중 변화를 사용자별로 저장해야 합니다"]),
+      payment: rec("나중에 추가할 예정입니다", [
+        "무료 기록 기능으로 시작하고 프리미엄 루틴 추천으로 수익화하는 것이 좋습니다",
+      ]),
+      additional: rec("운동 루틴 추천, 주간 리포트, 사진 기록", [
+        "변화를 눈으로 확인하게 해주는 기능이 지속 사용을 만듭니다",
+      ]),
+    },
+  },
+  {
+    keywords: ["가계부", "지출", "소비"],
+    set: {
+      targetUser: rec("지출을 관리하고 싶은 직장인, 사회초년생", [
+        "고정 수입이 생기면서 지출 관리를 시작하는 시기의 사용자입니다",
+      ]),
+      coreFeatures: rec("수입/지출 기록, 카테고리 분류, 월간 통계, 예산 설정", [
+        "기록 → 분류 → 통계가 가계부의 기본 흐름입니다",
+      ]),
+      platform: rec("모바일 앱", ["지출 직후 바로 기록하는 사용 패턴에 모바일 앱이 적합합니다"]),
+      auth: rec("필요합니다", ["개인 금융 기록을 안전하게 저장해야 합니다"]),
+      payment: rec("나중에 추가할 예정입니다", [
+        "무료 기록 기능으로 시작하고 소비 리포트 등 프리미엄 기능으로 확장하는 것이 좋습니다",
+      ]),
+      additional: rec("고정지출 관리, 카드값 계산, 소비 리포트", [
+        "매달 반복되는 관리 부담을 줄여주는 기능들입니다",
+      ]),
+    },
+  },
+  {
+    keywords: ["쇼핑몰", "쇼핑", "커머스", "판매"],
+    set: {
+      targetUser: rec("온라인으로 상품을 판매하려는 소상공인", [
+        "자체 판매 채널이 필요한 소상공인이 핵심 사용자입니다",
+      ]),
+      coreFeatures: rec("상품 등록, 장바구니, 주문 관리, 결제, 관리자 페이지", [
+        "상품 등록부터 주문·결제까지가 쇼핑몰의 필수 흐름입니다",
+      ]),
+      platform: rec("모바일 웹과 PC 웹 모두 필요", [
+        "구매는 모바일, 상품 관리 등 운영은 PC에서 주로 이뤄집니다",
+      ], "모두 필요"),
+      auth: rec("필요합니다", ["주문 내역과 배송 정보를 사용자별로 관리해야 합니다"]),
+      payment: rec("필요합니다", ["상품 판매에는 결제가 필수 기능입니다"]),
+      additional: rec("재고 관리, 쿠폰, 리뷰, 배송 조회", [
+        "판매와 재구매를 늘리는 대표 커머스 기능들입니다",
+      ]),
+    },
+  },
+  {
+    keywords: ["배달"],
+    set: {
+      targetUser: rec("음식점 사장님과 배달 주문을 원하는 고객", [
+        "주문을 받는 사장님과 주문하는 고객, 양쪽이 모두 사용자입니다",
+      ]),
+      coreFeatures: rec("메뉴 등록, 주문, 결제, 배달 상태, 관리자 페이지", [
+        "주문 접수부터 배달 완료까지의 흐름이 핵심입니다",
+      ]),
+      platform: rec("모바일 앱", ["주문과 배달 상태 확인 모두 모바일 사용 비중이 압도적입니다"]),
+      auth: rec("필요합니다", ["주문 내역과 배달 주소를 사용자별로 저장해야 합니다"]),
+      payment: rec("필요합니다", ["배달 주문은 선결제가 기본 흐름입니다"]),
+      additional: rec("주문 알림, 배달 상태 추적, 리뷰, 쿠폰", [
+        "주문 경험과 재주문율을 높이는 기능들입니다",
+      ]),
+    },
+  },
+];
+
+const DEFAULT_RECOMMENDATIONS: RecommendationSet = {
+  targetUser: rec("이 서비스를 가장 자주 사용할 핵심 사용자", [
+    "대상이 좁고 명확할수록 기능 우선순위가 분명해집니다",
+    "초기 피드백을 빠르게 받아 개선할 수 있습니다",
+  ]),
+  coreFeatures: rec("사용자 문제를 해결하는 핵심 기능 3~5개", [
+    "MVP는 없으면 서비스가 성립하지 않는 기능만 담는 것이 좋습니다",
+  ]),
+  platform: rec("모바일 웹", [
+    "가장 빠르게 출시할 수 있고 모바일과 PC 모두 대응 가능합니다",
+    "추후 앱으로 전환할 수 있습니다",
+  ]),
+  auth: rec("잘 모르겠습니다", [
+    "핵심 기능이 정해지면 로그인 필요 여부가 자연스럽게 결정됩니다",
+    "지금은 보류하고 기획 단계에서 다시 검토해도 됩니다",
+  ]),
+  payment: rec("나중에 추가할 예정입니다", [
+    "먼저 사용자를 확보한 후 수익화 기능을 붙이는 것이 안전합니다",
+  ]),
+  additional: rec("관리자 페이지, 알림, 통계, 문의하기", [
+    "대부분의 서비스에서 공통으로 필요한 보조 기능들입니다",
+  ]),
+};
+
+function getMockRecommendation(idea: string, step: number): AIRecommendation {
+  const field = INTERVIEW_STEPS[step].field;
+  const normalized = idea.trim();
+  const preset = RECOMMENDATION_PRESETS.find((p) => p.keywords.some((k) => normalized.includes(k)));
+  return (preset ? preset.set : DEFAULT_RECOMMENDATIONS)[field];
 }
 
 /* ---------- 페이지: AI 인터뷰 (단계형 플로우) ---------- */
@@ -808,15 +922,17 @@ function InterviewPage() {
   };
 
   const handleShowHelp = () => setShowHelp(true);
-  const handleRecommend = () => setRecommendation(getAIRecommendation(step.field, idea));
+  const handleRecommend = () => setRecommendation(getMockRecommendation(idea, stepIndex));
 
   const handleApplyRecommendation = () => {
     if (!recommendation) return;
-    setValue(recommendation.answer);
+    const applied = { ...answers, [step.field]: recommendation.applyValue };
+    setAnswers(applied);
+    persist(stepIndex + 1, applied);
   };
 
   return (
-    <main className="flex flex-1 flex-col px-5 py-4 animate-fadeIn md:items-center md:py-10">
+    <main className="flex flex-1 flex-col px-5 pt-4 pb-[140px] animate-fadeIn md:items-center md:pt-10 md:pb-12">
       <div className="flex w-full flex-col gap-4 md:max-w-[680px]">
         <section className="rounded-[24px] border border-[#ECEEF2] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:p-8">
           <h1 className="text-[24px] font-bold text-ink-title">AI 인터뷰</h1>
@@ -912,7 +1028,6 @@ function InterviewPage() {
                 AI 추천
               </h3>
               <p className="mt-1.5 text-[14px] font-semibold text-ink-title">추천: {recommendation.answer}</p>
-              <p className="mt-1 text-[13px] leading-relaxed text-ink-body">{recommendation.summary}</p>
               <ul className="mt-2 flex flex-col gap-1">
                 {recommendation.reasons.map((reason) => (
                   <li key={reason} className="flex items-start gap-1.5 text-[13px] leading-relaxed text-ink-body">
@@ -981,7 +1096,7 @@ function SummaryPage() {
   };
 
   return (
-    <main className="flex flex-1 flex-col px-5 py-4 animate-fadeIn md:items-center md:py-10">
+    <main className="flex flex-1 flex-col px-5 pt-4 pb-[140px] animate-fadeIn md:items-center md:pt-10 md:pb-12">
       <div className="flex w-full flex-col gap-4 md:max-w-[680px]">
         <section className="rounded-[24px] border border-[#ECEEF2] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:p-8">
           <h1 className="text-[24px] font-bold text-ink-title">프로젝트 기획 요약</h1>
@@ -1029,7 +1144,7 @@ function ProjectDetailPage() {
   }
 
   return (
-    <main className="flex flex-1 flex-col gap-4 px-5 py-4 animate-fadeIn md:mx-auto md:w-full md:max-w-[640px] md:py-8">
+    <main className="flex flex-1 flex-col gap-4 px-5 pt-4 pb-[140px] animate-fadeIn md:mx-auto md:w-full md:max-w-[640px] md:pt-8 md:pb-10">
       <BackButton label="Home으로 돌아가기" />
 
       <section className="rounded-[24px] border border-[#ECEEF2] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
@@ -1221,7 +1336,7 @@ function AppBottomNavigation() {
 export default function App() {
   return (
     <BrowserRouter>
-      <div className="mx-auto flex min-h-[100dvh] w-full flex-col bg-white md:h-[100dvh] md:overflow-hidden lg:max-w-[1440px] xl:px-4">
+      <div className="mx-auto flex min-h-[100dvh] w-full flex-col bg-white lg:max-w-[1440px] xl:px-4">
         <AppHeader />
 
         <Routes>
