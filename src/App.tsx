@@ -150,7 +150,7 @@ function IdeaInputSection({ onStartWithAI }: { onStartWithAI: (idea: string) => 
         onChange={handleChange}
         rows={1}
         placeholder={`예: ${PLACEHOLDER_EXAMPLES[placeholderIndex]}`}
-        className="mt-3 min-h-[100px] w-full resize-none overflow-hidden rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-[14px] text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
+        className="mt-3 min-h-[100px] w-full resize-none overflow-hidden rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-base text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
       />
 
       <button
@@ -525,7 +525,7 @@ function ProjectCreatePage() {
                 value={idea}
                 onChange={(e) => setIdea(e.target.value)}
                 placeholder={CREATE_PLACEHOLDER}
-                className="min-h-[130px] w-full resize-none rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-[14px] leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="min-h-[130px] w-full resize-none rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-base leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
               <button
                 onClick={handleStart}
@@ -584,7 +584,7 @@ function InterviewPage() {
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
               placeholder="예: 초보 투자자, 미용실 사장님, 헬스장 회원 등"
-              className="mt-3 min-h-[100px] w-full resize-none rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-[14px] leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="mt-3 min-h-[100px] w-full resize-none rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-base leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           </div>
 
