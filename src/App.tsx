@@ -9,11 +9,11 @@ import {
 } from "react-router-dom";
 import logo from "./assets/onetech-logo.png";
 import HeroCard from "./components/HeroCard";
-import TodayTasks from "./components/TodayTasks";
 import ProgressBar from "./components/ProgressBar";
-import { RECENT_PROJECTS, Project } from "./data/mockData";
+import { RECENT_PROJECTS, Project, TODAY_TASKS, TaskItem, TaskStatus } from "./data/mockData";
 
 /* ---------------------------------------------
+ * Phase 1-2: Project Create(프로젝트 생성) 기능
  * Phase 2-1: Home 실제 동작 기능
  * - 라우팅 / 데스크톱 헤더 메뉴 + 모바일 하단 탭바
  * - 아이디어 입력 (자유 입력 + Auto Resize + localStorage)
@@ -23,6 +23,7 @@ import { RECENT_PROJECTS, Project } from "./data/mockData";
  * --------------------------------------------- */
 
 const IDEA_STORAGE_KEY = "ai-builder-draft-idea";
+const PROJECT_STORAGE_KEY = "ai-builder-project";
 
 /* ---------- Navigation 정의 ---------- */
 
@@ -210,6 +211,114 @@ function RecentProjectsSection({ onViewAll, onSelect }: { onViewAll: () => void;
   );
 }
 
+/* ---------- 오늘 할 일 (시간 표시 없음) ---------- */
+
+const TASK_STATUS_MAP: Record<TaskStatus, { label: string; bg: string; text: string }> = {
+  done: { label: "완료", bg: "#DCFCE7", text: "#16A34A" },
+  inProgress: { label: "진행중", bg: "#DBEAFE", text: "#2563EB" },
+  pending: { label: "대기", bg: "#F3F4F6", text: "#6B7280" },
+};
+
+function TaskStatusBadge({ status }: { status: TaskStatus }) {
+  const s = TASK_STATUS_MAP[status];
+  return (
+    <span className="shrink-0 rounded-badge px-2.5 py-1 text-[11px] font-semibold" style={{ background: s.bg, color: s.text }}>
+      {s.label}
+    </span>
+  );
+}
+
+function TaskRow({ task, onToggle }: { task: TaskItem; onToggle: (id: string) => void }) {
+  return (
+    <li className="flex min-h-[48px] items-center gap-3 px-4 py-2 transition-colors duration-200 hover:bg-[#FAFBFC] lg:min-h-[39px] lg:py-1.5">
+      <button
+        onClick={() => onToggle(task.id)}
+        aria-label="할 일 완료 처리"
+        className={
+          "flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md border transition-colors " +
+          (task.status === "done" ? "bg-primary border-primary" : "bg-white border-[#D1D5DB]")
+        }
+      >
+        {task.status === "done" && (
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M5 13l4 4L19 7" />
+          </svg>
+        )}
+      </button>
+
+      <span
+        className={
+          "min-w-0 flex-1 truncate text-[14px] " +
+          (task.status === "done" ? "text-ink-body" : "text-ink-title font-medium")
+        }
+      >
+        {task.title}
+      </span>
+
+      <TaskStatusBadge status={task.status} />
+
+      <button
+        aria-label="더보기"
+        className="shrink-0 flex h-7 w-7 items-center justify-center rounded-full text-ink-body hover:bg-[#ECEEF2]"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <circle cx="5" cy="12" r="1.6" />
+          <circle cx="12" cy="12" r="1.6" />
+          <circle cx="19" cy="12" r="1.6" />
+        </svg>
+      </button>
+    </li>
+  );
+}
+
+function TodayTasksSection({ onViewAll }: { onViewAll: () => void }) {
+  const [tasks, setTasks] = useState(TODAY_TASKS);
+
+  const handleToggle = (id: string) => {
+    setTasks((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, status: t.status === "done" ? "pending" : "done" } : t))
+    );
+  };
+
+  const doneCount = tasks.filter((t) => t.status === "done").length;
+  const totalCount = tasks.length;
+  const percent = totalCount === 0 ? 0 : Math.round((doneCount / totalCount) * 100);
+
+  return (
+    <section className="animate-fadeIn flex flex-col md:min-h-0 md:flex-1">
+      <div className="flex shrink-0 items-center justify-between">
+        <h2 className="text-[18px] font-bold text-ink-title">오늘 할 일</h2>
+        <button onClick={onViewAll} className="flex items-center gap-0.5 text-[13px] font-medium text-primary">
+          전체 보기
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M9 6l6 6-6 6" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="mt-3.5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-[24px] border border-[#ECEEF2] bg-white md:min-h-0">
+        <div className="shrink-0 border-b border-[#ECEEF2] px-4 py-3">
+          <div className="flex items-center justify-between text-[12px] text-ink-body">
+            <span>
+              {doneCount}/{totalCount} 완료
+            </span>
+            <span className="font-bold text-primary">{percent}%</span>
+          </div>
+          <div className="mt-1.5">
+            <ProgressBar progress={percent} />
+          </div>
+        </div>
+
+        <ul className="min-h-0 flex-1 divide-y divide-[#ECEEF2] overflow-y-auto">
+          {tasks.map((task) => (
+            <TaskRow key={task.id} task={task} onToggle={handleToggle} />
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
 /* ---------- 페이지: Home ---------- */
 
 function HomePage() {
@@ -236,7 +345,7 @@ function HomePage() {
           <RecentProjectsSection onViewAll={handleViewAll} onSelect={handleSelectProject} />
         </div>
         <div className="flex min-h-0 flex-1 flex-col md:min-h-0">
-          <TodayTasks onViewAll={() => navigate("/todo")} />
+          <TodayTasksSection onViewAll={() => navigate("/todo")} />
         </div>
       </div>
     </main>
@@ -262,37 +371,129 @@ function BackButton({ label }: { label: string }) {
 
 /* ---------- 페이지: Project Create ---------- */
 
-function ProjectCreatePage() {
-  const location = useLocation();
-  const state = location.state as { idea?: string } | null;
-  const idea = state?.idea ?? localStorage.getItem(IDEA_STORAGE_KEY) ?? "";
+type ProjectType = "idea" | "no-idea";
 
-  const handleStartInterview = () => {
-    console.log("AI 인터뷰 시작하기 클릭 — 전달된 아이디어:", idea);
+const CREATE_PLACEHOLDER =
+  "예)\n주식 초보를 위한 앱\n예약관리 시스템\nAI 가계부\n반려동물 커뮤니티";
+
+function ProjectCreatePage() {
+  const navigate = useNavigate();
+  const [projectType, setProjectType] = useState<ProjectType | null>(null);
+  const [idea, setIdea] = useState("");
+
+  const isStartDisabled = projectType === "idea" && idea.trim().length === 0;
+
+  const handleStart = () => {
+    if (!projectType || isStartDisabled) return;
+
+    const project = {
+      projectType,
+      idea: projectType === "idea" ? idea.trim() : "",
+      createdAt: new Date().toISOString(),
+      status: "interview",
+      step: 1,
+    };
+    localStorage.setItem(PROJECT_STORAGE_KEY, JSON.stringify(project));
+    navigate("/project/interview");
   };
 
+  const options: { value: ProjectType; label: string }[] = [
+    { value: "idea", label: "있어요" },
+    { value: "no-idea", label: "없어요" },
+  ];
+
   return (
-    <main className="flex flex-1 flex-col gap-4 px-5 py-4 animate-fadeIn md:mx-auto md:w-full md:max-w-[640px] md:py-8">
-      <BackButton label="Home으로 돌아가기" />
+    <main className="flex flex-1 flex-col px-5 py-4 animate-fadeIn md:items-center md:py-10">
+      <div className="flex w-full flex-col gap-4 md:max-w-[680px]">
+        <section className="rounded-[24px] border border-[#ECEEF2] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:p-8">
+          <h1 className="text-[24px] font-bold text-ink-title">새 프로젝트 만들기</h1>
+          <p className="mt-2 text-[15px] leading-relaxed text-ink-body">
+            AI가 질문을 하면서
+            <br />
+            서비스를 함께 기획합니다.
+          </p>
 
-      <h1 className="text-[24px] font-bold text-ink-title">프로젝트 만들기</h1>
+          {/* 질문: 아이디어가 있으신가요? */}
+          <fieldset className="mt-6">
+            <legend className="text-[15px] font-semibold text-ink-title">아이디어가 있으신가요?</legend>
+            <div className="mt-3 flex gap-3">
+              {options.map((option) => {
+                const isSelected = projectType === option.value;
+                return (
+                  <label
+                    key={option.value}
+                    className={
+                      "flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-2xl border px-4 py-3.5 text-[15px] font-medium transition-colors duration-200 " +
+                      (isSelected
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]")
+                    }
+                  >
+                    <input
+                      type="radio"
+                      name="projectType"
+                      value={option.value}
+                      checked={isSelected}
+                      onChange={() => setProjectType(option.value)}
+                      className="sr-only"
+                    />
+                    <span
+                      aria-hidden="true"
+                      className={
+                        "flex h-[18px] w-[18px] items-center justify-center rounded-full border-2 transition-colors duration-200 " +
+                        (isSelected ? "border-primary" : "border-[#D1D5DB]")
+                      }
+                    >
+                      {isSelected && <span className="h-2.5 w-2.5 rounded-full bg-primary" />}
+                    </span>
+                    {option.label}
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
 
-      <section className="rounded-[24px] border border-[#ECEEF2] bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
-        <h2 className="text-[13px] font-semibold text-ink-body">입력한 아이디어</h2>
-        <p className="mt-2 whitespace-pre-wrap text-[15px] leading-relaxed text-ink-title">
-          {idea.trim().length > 0 ? idea : "아직 입력한 아이디어가 없습니다."}
-        </p>
-      </section>
+          {/* CASE 1: 있어요 → 입력창 + AI 인터뷰 시작 */}
+          {projectType === "idea" && (
+            <div className="mt-5 animate-fadeIn">
+              <textarea
+                value={idea}
+                onChange={(e) => setIdea(e.target.value)}
+                placeholder={CREATE_PLACEHOLDER}
+                className="min-h-[130px] w-full resize-none rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-[14px] leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <button
+                onClick={handleStart}
+                disabled={isStartDisabled}
+                className="mt-4 flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)] transition-all duration-200 enabled:hover:scale-[1.02] enabled:active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                AI 인터뷰 시작
+              </button>
+            </div>
+          )}
 
-      <button
-        onClick={handleStartInterview}
-        className="flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)] transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-          <path d="M12 2l1.9 5.5L19.5 9l-5.6 1.5L12 16l-1.9-5.5L4.5 9l5.6-1.5L12 2z" />
-        </svg>
-        AI 인터뷰 시작하기
-      </button>
+          {/* CASE 2: 없어요 → 아이디어 함께 찾기 */}
+          {projectType === "no-idea" && (
+            <button
+              onClick={handleStart}
+              className="mt-5 flex h-[52px] w-full animate-fadeIn items-center justify-center gap-2 rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)] transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
+            >
+              아이디어 함께 찾기
+            </button>
+          )}
+        </section>
+      </div>
+    </main>
+  );
+}
+
+/* ---------- 페이지: AI 인터뷰 (준비중) ---------- */
+
+function InterviewPage() {
+  return (
+    <main className="flex flex-1 flex-col items-center justify-center gap-2 px-5 py-3 animate-fadeIn">
+      <h1 className="text-[22px] font-bold text-ink-title">AI 인터뷰</h1>
+      <p className="text-[14px] text-ink-body">준비중</p>
     </main>
   );
 }
@@ -511,6 +712,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/project/create" element={<ProjectCreatePage />} />
+          <Route path="/project/interview" element={<InterviewPage />} />
           <Route path="/project/:projectId" element={<ProjectDetailPage />} />
           <Route path="/projects" element={<PlaceholderPage title="프로젝트 목록" description="프로젝트 목록 화면을 준비 중입니다." />} />
           <Route path="/todo" element={<PlaceholderPage title="오늘 할 일" description="할 일 화면을 준비 중입니다." />} />
