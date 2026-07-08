@@ -66,6 +66,25 @@ function saveUserProject(project: UserProject) {
   localStorage.setItem(PROJECTS_LIST_KEY, JSON.stringify([project, ...list].slice(0, PROJECTS_LIST_MAX)));
 }
 
+function loadCurrentProject(): Record<string, unknown> {
+  try {
+    const raw = localStorage.getItem(CURRENT_PROJECT_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function updateCurrentProject(patch: Record<string, unknown>) {
+  const current = loadCurrentProject();
+  localStorage.setItem(
+    CURRENT_PROJECT_KEY,
+    JSON.stringify({ ...current, ...patch, updatedAt: new Date().toISOString() })
+  );
+}
+
 function loadCurrentIdea(): string {
   try {
     const current = localStorage.getItem(CURRENT_PROJECT_KEY);
@@ -552,14 +571,248 @@ function ProjectCreatePage() {
   );
 }
 
-/* ---------- 페이지: AI 인터뷰 ---------- */
+/* ---------- AI 인터뷰: 단계 정의 ---------- */
+
+interface InterviewAnswers {
+  targetUser: string;
+  coreFeatures: string;
+  platform: string;
+  auth: string;
+  payment: string;
+  additional: string;
+}
+
+type InterviewField = keyof InterviewAnswers;
+
+const EMPTY_ANSWERS: InterviewAnswers = {
+  targetUser: "",
+  coreFeatures: "",
+  platform: "",
+  auth: "",
+  payment: "",
+  additional: "",
+};
+
+interface InterviewStepDef {
+  field: InterviewField;
+  label: string;
+  question: string;
+  type: "text" | "choice";
+  placeholder?: string;
+  options?: string[];
+  required: boolean;
+  help: string;
+}
+
+const INTERVIEW_STEPS: InterviewStepDef[] = [
+  {
+    field: "targetUser",
+    label: "대상 사용자",
+    question: "이 서비스는 누구를 위한 서비스인가요?",
+    type: "text",
+    placeholder: "예: 초보 투자자, 미용실 사장님, 헬스장 회원 등",
+    required: true,
+    help: "대상 사용자는 서비스의 기능, 디자인, 말투까지 정하는 기준입니다. 이 서비스가 해결하는 문제를 가장 자주 겪는 사람이 누구인지 떠올려 보세요. 아래 추천을 참고하세요.",
+  },
+  {
+    field: "coreFeatures",
+    label: "핵심 기능",
+    question: "이 서비스에서 꼭 필요한 핵심 기능은 무엇인가요?",
+    type: "text",
+    placeholder: "예: 예약 관리, 고객 관리, 알림, 결제, 관리자 페이지 등",
+    required: true,
+    help: "핵심 기능은 사용자가 이 서비스를 쓰는 가장 큰 이유 1~3가지입니다. 처음부터 모든 기능을 넣기보다, 없으면 서비스가 성립하지 않는 기능만 골라 보세요. 아래 추천을 참고하세요.",
+  },
+  {
+    field: "platform",
+    label: "사용 플랫폼",
+    question: "사용자는 이 서비스를 어디에서 주로 사용하나요?",
+    type: "choice",
+    options: ["모바일 앱", "모바일 웹", "PC 웹", "모두 필요"],
+    required: true,
+    help: "어디에서 쓰는지에 따라 개발 방식과 비용, 출시 속도가 크게 달라집니다. 이동 중에 쓰는 서비스라면 모바일, 업무용이라면 PC 비중이 높습니다. 아래 추천을 참고하세요.",
+  },
+  {
+    field: "auth",
+    label: "로그인 필요 여부",
+    question: "로그인이나 회원가입이 필요한가요?",
+    type: "choice",
+    options: ["필요합니다", "필요 없습니다", "잘 모르겠습니다"],
+    required: true,
+    help: "로그인은 사용자의 정보를 저장하거나 프로필, 주문내역, 예약내역 등을 관리할 때 필요합니다. 로그인이 필요 없는 경우도 있습니다. 아래 추천을 참고하세요.",
+  },
+  {
+    field: "payment",
+    label: "결제 필요 여부",
+    question: "결제 기능이 필요한가요?",
+    type: "choice",
+    options: ["필요합니다", "필요 없습니다", "나중에 추가할 예정입니다", "잘 모르겠습니다"],
+    required: true,
+    help: "결제는 유료 상품, 구독, 예약금처럼 돈이 오가는 기능이 있을 때 필요합니다. 결제 연동은 심사와 개발 기간이 추가로 들어가는 영역입니다. 아래 추천을 참고하세요.",
+  },
+  {
+    field: "additional",
+    label: "추가 요청사항",
+    question: "추가로 원하는 기능이나 참고하고 싶은 서비스가 있나요?",
+    type: "text",
+    placeholder: "예: 토스처럼 깔끔하게, 카카오톡 알림, 관리자 통계, 참고 사이트 URL 등",
+    required: false,
+    help: "참고하고 싶은 서비스나 원하는 느낌을 알려주면 기획의 정확도가 올라갑니다. 없다면 비워두고 완료해도 됩니다. 아래 추천을 참고하세요.",
+  },
+];
+
+const INTERVIEW_PROGRESS = [16, 33, 50, 66, 83, 100];
+
+/* ---------- AI 추천 (Mock) ----------
+ * 나중에 Claude API 연결 시 이 함수 내부만 API 호출로 교체하면 된다.
+ * 반환 형태(AIRecommendation)는 유지한다.
+ */
+
+interface AIRecommendation {
+  answer: string;
+  summary: string;
+  reasons: string[];
+}
+
+function getAIRecommendation(field: InterviewField, idea: string): AIRecommendation {
+  const ideaLabel = idea.trim().length > 0 ? `"${idea.trim()}"` : "이 프로젝트";
+
+  switch (field) {
+    case "targetUser":
+      return {
+        answer: "해당 분야를 처음 시작하는 초보 사용자",
+        summary: `${ideaLabel}는 좁고 명확한 초기 사용자층부터 시작하는 것을 추천합니다.`,
+        reasons: [
+          "초보 사용자는 기존 서비스에 만족하지 못해 새 서비스를 시도할 가능성이 높습니다",
+          "대상이 좁을수록 기능 우선순위가 명확해집니다",
+          "초기 피드백을 빠르게 받아 개선할 수 있습니다",
+        ],
+      };
+    case "coreFeatures":
+      return {
+        answer: "핵심 문제를 해결하는 기능 1개, 목록/상세 화면, 알림",
+        summary: "MVP에서는 핵심 가치를 전달하는 최소 기능만 담는 것을 추천합니다.",
+        reasons: [
+          "기능이 적을수록 빠르게 출시하고 검증할 수 있습니다",
+          "사용자 반응을 본 뒤 기능을 추가하는 것이 안전합니다",
+          "관리자 페이지 등은 다음 단계에서 붙여도 늦지 않습니다",
+        ],
+      };
+    case "platform":
+      return {
+        answer: "모바일 웹",
+        summary: "모바일 웹(React Web)으로 시작하는 것을 추천합니다.",
+        reasons: [
+          "가장 빠르게 출시할 수 있습니다",
+          "모바일과 PC 모두 대응 가능합니다",
+          "앱 심사 없이 바로 배포되어 비용이 절감됩니다",
+          "추후 앱으로 전환할 수 있습니다",
+        ],
+      };
+    case "auth":
+      return {
+        answer: "필요합니다",
+        summary: "로그인 기능을 넣는 것을 추천합니다.",
+        reasons: [
+          "관심 항목, 기록 같은 개인 데이터를 저장하려면 로그인이 필요합니다",
+          "알림, 즐겨찾기 기능의 기반이 됩니다",
+          "재방문 사용자를 관리할 수 있습니다",
+        ],
+      };
+    case "payment":
+      return {
+        answer: "나중에 추가할 예정입니다",
+        summary: "초기 MVP에서는 결제를 넣지 않는 것을 추천합니다.",
+        reasons: [
+          "먼저 사용자를 확보한 후 프리미엄 기능으로 추가하는 것이 좋습니다",
+          "결제 연동은 심사와 개발 기간이 추가로 필요합니다",
+          "무료로 시작하면 초기 진입 장벽이 낮아집니다",
+        ],
+      };
+    case "additional":
+      return {
+        answer: "토스처럼 깔끔한 UI, 카카오톡 알림 연동",
+        summary: "많이 참고되는 방향을 추천으로 제시합니다.",
+        reasons: [
+          "깔끔한 UI 기준을 정해두면 디자인 결정이 빨라집니다",
+          "카카오톡 알림은 국내 사용자 재방문율을 높이는 대표 기능입니다",
+        ],
+      };
+  }
+}
+
+/* ---------- 페이지: AI 인터뷰 (단계형 플로우) ---------- */
+
+function loadInterviewState(): { step: number; answers: InterviewAnswers } {
+  const project = loadCurrentProject();
+  const savedStep = typeof project.interviewStep === "number" ? project.interviewStep : 1;
+  const savedAnswers =
+    typeof project.interviewAnswers === "object" && project.interviewAnswers !== null
+      ? (project.interviewAnswers as Partial<InterviewAnswers>)
+      : {};
+  const step = Math.min(Math.max(savedStep, 1), INTERVIEW_STEPS.length);
+  return { step, answers: { ...EMPTY_ANSWERS, ...savedAnswers } };
+}
 
 function InterviewPage() {
+  const navigate = useNavigate();
   const idea = loadCurrentIdea();
-  const [answer, setAnswer] = useState("");
+
+  const initial = loadInterviewState();
+  const [stepIndex, setStepIndex] = useState(initial.step - 1);
+  const [answers, setAnswers] = useState<InterviewAnswers>(initial.answers);
+  const [showHelp, setShowHelp] = useState(false);
+  const [recommendation, setRecommendation] = useState<AIRecommendation | null>(null);
+
+  const step = INTERVIEW_STEPS[stepIndex];
+  const isLastStep = stepIndex === INTERVIEW_STEPS.length - 1;
+  const value = answers[step.field];
+  const isNextDisabled = step.required && value.trim().length === 0;
+
+  const setValue = (v: string) => setAnswers((prev) => ({ ...prev, [step.field]: v }));
+
+  const persist = (nextStep: number, nextAnswers: InterviewAnswers) => {
+    updateCurrentProject({
+      progress: 15,
+      interviewStep: nextStep,
+      interviewAnswers: nextAnswers,
+    });
+  };
+
+  const moveTo = (nextIndex: number) => {
+    persist(nextIndex + 1, answers);
+    setStepIndex(nextIndex);
+    setShowHelp(false);
+    setRecommendation(null);
+  };
 
   const handleNext = () => {
-    console.log("AI 인터뷰 - 다음 클릭:", { idea, answer });
+    if (isNextDisabled) return;
+    if (isLastStep) {
+      updateCurrentProject({
+        status: "planning",
+        step: "planning-summary",
+        progress: 25,
+        interviewStep: INTERVIEW_STEPS.length,
+        interviewAnswers: answers,
+      });
+      navigate("/project/summary");
+      return;
+    }
+    moveTo(stepIndex + 1);
+  };
+
+  const handlePrev = () => {
+    if (stepIndex === 0) return;
+    moveTo(stepIndex - 1);
+  };
+
+  const handleShowHelp = () => setShowHelp(true);
+  const handleRecommend = () => setRecommendation(getAIRecommendation(step.field, idea));
+
+  const handleApplyRecommendation = () => {
+    if (!recommendation) return;
+    setValue(recommendation.answer);
   };
 
   return (
@@ -567,32 +820,192 @@ function InterviewPage() {
       <div className="flex w-full flex-col gap-4 md:max-w-[680px]">
         <section className="rounded-[24px] border border-[#ECEEF2] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:p-8">
           <h1 className="text-[24px] font-bold text-ink-title">AI 인터뷰</h1>
-          <p className="mt-2 text-[15px] leading-relaxed text-ink-body">
-            입력한 아이디어를 바탕으로 프로젝트 기획을 시작합니다.
-          </p>
 
-          <div className="mt-6 rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5">
-            <h2 className="text-[13px] font-semibold text-ink-body">입력한 아이디어</h2>
-            <p className="mt-1 whitespace-pre-wrap text-[15px] leading-relaxed text-ink-title">
-              {idea.trim().length > 0 ? idea : "아직 입력한 아이디어가 없습니다."}
-            </p>
-          </div>
+          {idea.trim().length > 0 && (
+            <div className="mt-3 rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3">
+              <h2 className="text-[12px] font-semibold text-ink-body">입력한 아이디어</h2>
+              <p className="mt-0.5 whitespace-pre-wrap text-[14px] leading-relaxed text-ink-title">{idea}</p>
+            </div>
+          )}
 
+          {/* 진행률 */}
           <div className="mt-6">
-            <h2 className="text-[15px] font-semibold text-ink-title">이 서비스는 누구를 위한 서비스인가요?</h2>
-            <textarea
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              placeholder="예: 초보 투자자, 미용실 사장님, 헬스장 회원 등"
-              className="mt-3 min-h-[100px] w-full resize-none rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-base leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
+            <div className="flex items-center justify-between text-[13px]">
+              <span className="font-semibold text-ink-body">
+                {stepIndex + 1} / {INTERVIEW_STEPS.length}
+              </span>
+              <span className="font-bold text-primary">{INTERVIEW_PROGRESS[stepIndex]}%</span>
+            </div>
+            <div className="mt-2">
+              <ProgressBar progress={INTERVIEW_PROGRESS[stepIndex]} />
+            </div>
           </div>
+
+          {/* 질문 */}
+          <h2 className="mt-6 text-[17px] font-bold leading-snug text-ink-title">{step.question}</h2>
+
+          {/* 입력 영역 */}
+          {step.type === "text" ? (
+            <textarea
+              key={step.field}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={step.placeholder}
+              className="mt-4 min-h-[110px] w-full resize-none rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-base leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          ) : (
+            <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              {step.options?.map((option) => {
+                const isSelected = value === option;
+                return (
+                  <button
+                    key={option}
+                    onClick={() => setValue(option)}
+                    className={
+                      "flex items-center justify-center rounded-2xl border px-4 py-3.5 text-[15px] font-medium transition-colors duration-200 " +
+                      (isSelected
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]")
+                    }
+                  >
+                    {option}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* 잘 모르겠습니다 / AI 추천받기 */}
+          <div className="mt-3 flex gap-2.5">
+            <button
+              onClick={handleShowHelp}
+              className="flex h-[42px] flex-1 items-center justify-center rounded-2xl border border-[#E5E8EB] bg-white text-[13px] font-medium text-ink-body transition-colors duration-200 hover:border-[#D1D5DB] hover:text-ink-title"
+            >
+              잘 모르겠습니다
+            </button>
+            <button
+              onClick={handleRecommend}
+              className="flex h-[42px] flex-1 items-center justify-center gap-1.5 rounded-2xl border border-primary/30 bg-primary/5 text-[13px] font-semibold text-primary transition-colors duration-200 hover:bg-primary/10"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+                <path d="M12 2l1.9 5.5L19.5 9l-5.6 1.5L12 16l-1.9-5.5L4.5 9l5.6-1.5L12 2z" />
+              </svg>
+              AI 추천받기
+            </button>
+          </div>
+
+          {/* 안내 (잘 모르겠습니다) */}
+          {showHelp && (
+            <div className="mt-3 animate-fadeIn rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5">
+              <h3 className="text-[12px] font-semibold text-ink-body">안내</h3>
+              <p className="mt-1 text-[14px] leading-relaxed text-ink-title">{step.help}</p>
+            </div>
+          )}
+
+          {/* AI 추천 */}
+          {recommendation && (
+            <div className="mt-3 animate-fadeIn rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3.5">
+              <h3 className="flex items-center gap-1.5 text-[12px] font-semibold text-primary">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+                  <path d="M12 2l1.9 5.5L19.5 9l-5.6 1.5L12 16l-1.9-5.5L4.5 9l5.6-1.5L12 2z" />
+                </svg>
+                AI 추천
+              </h3>
+              <p className="mt-1.5 text-[14px] font-semibold text-ink-title">추천: {recommendation.answer}</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-ink-body">{recommendation.summary}</p>
+              <ul className="mt-2 flex flex-col gap-1">
+                {recommendation.reasons.map((reason) => (
+                  <li key={reason} className="flex items-start gap-1.5 text-[13px] leading-relaxed text-ink-body">
+                    <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-primary" aria-hidden="true" />
+                    {reason}
+                  </li>
+                ))}
+              </ul>
+              <button
+                onClick={handleApplyRecommendation}
+                className="mt-3 flex h-[42px] w-full items-center justify-center rounded-2xl bg-primary text-[13px] font-semibold text-white transition-transform duration-200 hover:scale-[1.01] active:scale-[0.99]"
+              >
+                추천 적용
+              </button>
+            </div>
+          )}
+
+          {/* 이전 / 다음 */}
+          <div className="mt-6 flex gap-3">
+            {stepIndex > 0 && (
+              <button
+                onClick={handlePrev}
+                className="flex h-[52px] flex-1 items-center justify-center rounded-2xl border border-[#E5E8EB] bg-white text-[15px] font-semibold text-ink-body transition-colors duration-200 hover:border-[#D1D5DB] hover:text-ink-title"
+              >
+                이전
+              </button>
+            )}
+            <button
+              onClick={handleNext}
+              disabled={isNextDisabled}
+              className="flex h-[52px] flex-[2] items-center justify-center gap-2 rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)] transition-all duration-200 enabled:hover:scale-[1.02] enabled:active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {isLastStep ? "인터뷰 완료" : "다음"}
+            </button>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+/* ---------- 페이지: 프로젝트 기획 요약 ---------- */
+
+function SummaryPage() {
+  const project = loadCurrentProject();
+  const idea = loadCurrentIdea();
+  const answers: InterviewAnswers = {
+    ...EMPTY_ANSWERS,
+    ...(typeof project.interviewAnswers === "object" && project.interviewAnswers !== null
+      ? (project.interviewAnswers as Partial<InterviewAnswers>)
+      : {}),
+  };
+
+  const rows: { label: string; value: string }[] = [
+    { label: "입력한 아이디어", value: idea },
+    { label: "대상 사용자", value: answers.targetUser },
+    { label: "핵심 기능", value: answers.coreFeatures },
+    { label: "사용 플랫폼", value: answers.platform },
+    { label: "로그인 필요 여부", value: answers.auth },
+    { label: "결제 필요 여부", value: answers.payment },
+    { label: "추가 요청사항", value: answers.additional },
+  ];
+
+  const handleGenerate = () => {
+    console.log("기획서 생성하기 클릭:", { idea, answers });
+  };
+
+  return (
+    <main className="flex flex-1 flex-col px-5 py-4 animate-fadeIn md:items-center md:py-10">
+      <div className="flex w-full flex-col gap-4 md:max-w-[680px]">
+        <section className="rounded-[24px] border border-[#ECEEF2] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:p-8">
+          <h1 className="text-[24px] font-bold text-ink-title">프로젝트 기획 요약</h1>
+
+          <ul className="mt-5 divide-y divide-[#ECEEF2] overflow-hidden rounded-2xl border border-[#E5E8EB]">
+            {rows.map((row) => (
+              <li key={row.label} className="bg-[#F8FAFC] px-4 py-3">
+                <h2 className="text-[12px] font-semibold text-ink-body">{row.label}</h2>
+                <p className="mt-0.5 whitespace-pre-wrap text-[14px] leading-relaxed text-ink-title">
+                  {row.value.trim().length > 0 ? row.value : "-"}
+                </p>
+              </li>
+            ))}
+          </ul>
 
           <button
-            onClick={handleNext}
-            className="mt-4 flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)] transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
+            onClick={handleGenerate}
+            className="mt-5 flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)] transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
           >
-            다음
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M6 3h9l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+              <path d="M14 3v5h5M9 13h6M9 17h6" />
+            </svg>
+            기획서 생성하기
           </button>
         </section>
       </div>
@@ -815,6 +1228,7 @@ export default function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/project/create" element={<ProjectCreatePage />} />
           <Route path="/project/interview" element={<InterviewPage />} />
+          <Route path="/project/summary" element={<SummaryPage />} />
           <Route path="/project/:projectId" element={<ProjectDetailPage />} />
           <Route path="/projects" element={<PlaceholderPage title="프로젝트 목록" description="프로젝트 목록 화면을 준비 중입니다." />} />
           <Route path="/todo" element={<PlaceholderPage title="오늘 할 일" description="할 일 화면을 준비 중입니다." />} />
