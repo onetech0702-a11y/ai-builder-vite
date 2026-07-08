@@ -1,18 +1,28 @@
 ﻿import { useEffect, useRef, useState } from "react";
-import { BrowserRouter, Routes, Route, useNavigate, useLocation } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  useNavigate,
+  useLocation,
+  useParams,
+} from "react-router-dom";
 import logo from "./assets/onetech-logo.png";
 import HeroCard from "./components/HeroCard";
-import RecentProjects from "./components/RecentProjects";
 import TodayTasks from "./components/TodayTasks";
+import ProgressBar from "./components/ProgressBar";
+import { RECENT_PROJECTS, Project } from "./data/mockData";
 
 /* ---------------------------------------------
- * 기능 1: 라우팅 기반 구축
- * 기능 2: 아이디어 입력창 (자유 입력 + Auto Resize + localStorage)
- * 개선: 웹(PC) 반응형 — 데스크톱은 헤더 메뉴, 모바일은 하단 탭바
+ * Phase 2-1: Home 실제 동작 기능
+ * - 라우팅 / 데스크톱 헤더 메뉴 + 모바일 하단 탭바
+ * - 아이디어 입력 (자유 입력 + Auto Resize + localStorage)
+ * - AI와 함께 시작하기: 입력 없으면 비활성화, 입력값 전달
+ * - Project Create / Project Detail / Placeholder 화면
  * 이 파일 하나만 교체하면 됩니다. (src/App.tsx)
  * --------------------------------------------- */
 
-const IDEA_STORAGE_KEY = "ai-builder:idea-draft";
+const IDEA_STORAGE_KEY = "ai-builder-draft-idea";
 
 /* ---------- Navigation 정의 ---------- */
 
@@ -31,7 +41,7 @@ const NAV_ROUTES: NavRoute[] = [
   { id: "settings", label: "설정", path: "/setting" },
 ];
 
-/* ---------- 아이디어 입력 카드 (기능 2) ---------- */
+/* ---------- 아이디어 입력 카드 ---------- */
 
 const PLACEHOLDER_EXAMPLES = [
   "AI 주식 앱을 만들고 싶어요",
@@ -43,10 +53,12 @@ const PLACEHOLDER_EXAMPLES = [
 
 const PLACEHOLDER_INTERVAL_MS = 2400;
 
-function IdeaInputSection({ onStartWithAI }: { onStartWithAI: () => void }) {
+function IdeaInputSection({ onStartWithAI }: { onStartWithAI: (idea: string) => void }) {
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [idea, setIdea] = useState(() => localStorage.getItem(IDEA_STORAGE_KEY) ?? "");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const isEmpty = idea.trim().length === 0;
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -78,12 +90,13 @@ function IdeaInputSection({ onStartWithAI }: { onStartWithAI: () => void }) {
         onChange={handleChange}
         rows={1}
         placeholder={`예: ${PLACEHOLDER_EXAMPLES[placeholderIndex]}`}
-        className="mt-3 min-h-[100px] w-full resize-none overflow-hidden rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-[14px] text-ink-title placeholder:text-ink-body placeholder:transition-opacity placeholder:duration-200 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        className="mt-3 min-h-[100px] w-full resize-none overflow-hidden rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-[14px] text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
       />
 
       <button
-        onClick={onStartWithAI}
-        className="mt-3 flex h-[50px] w-full items-center justify-center gap-2 rounded-2xl bg-primary text-[14px] font-semibold text-white transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
+        onClick={() => onStartWithAI(idea.trim())}
+        disabled={isEmpty}
+        className="mt-3 flex h-[50px] w-full items-center justify-center gap-2 rounded-2xl bg-primary text-[14px] font-semibold text-white transition-all duration-200 enabled:hover:scale-[1.02] enabled:active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
           <path d="M12 2l1.9 5.5L19.5 9l-5.6 1.5L12 16l-1.9-5.5L4.5 9l5.6-1.5L12 2z" />
@@ -94,14 +107,118 @@ function IdeaInputSection({ onStartWithAI }: { onStartWithAI: () => void }) {
   );
 }
 
+/* ---------- 최근 프로젝트 (카드 클릭 → 상세 이동) ---------- */
+
+function ProjectIcon({ type }: { type: Project["icon"] }) {
+  const common = {
+    width: 18,
+    height: 18,
+    viewBox: "0 0 24 24",
+    fill: "none" as const,
+    stroke: "#FFFFFF",
+    strokeWidth: 2,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true as const,
+  };
+  switch (type) {
+    case "folder":
+      return (
+        <svg {...common}>
+          <path d="M4 7a1 1 0 0 1 1-1h4l2 2h8a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7z" />
+        </svg>
+      );
+    case "chart":
+      return (
+        <svg {...common}>
+          <path d="M4 16l5-5 4 4 7-8" />
+        </svg>
+      );
+    case "calendar":
+      return (
+        <svg {...common}>
+          <rect x="4" y="5" width="16" height="15" rx="2.5" />
+          <path d="M8 3v4M16 3v4M4 10h16" />
+        </svg>
+      );
+  }
+}
+
+function ProjectListItem({ project, onSelect }: { project: Project; onSelect: (id: string) => void }) {
+  return (
+    <li
+      onClick={() => onSelect(project.id)}
+      className="flex cursor-pointer items-start gap-3 px-4 py-3.5 transition-colors duration-150 hover:bg-[#F8FAFC] active:bg-[#F3F4F6]"
+    >
+      <div
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl shadow-[0_6px_14px_-4px_rgba(79,107,255,0.4)]"
+        style={{ background: `linear-gradient(135deg, ${project.colorFrom}, ${project.colorTo})` }}
+      >
+        <ProjectIcon type={project.icon} />
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-[14px] font-semibold text-ink-title truncate">{project.name}</h3>
+          <button
+            aria-label="더보기"
+            onClick={(e) => e.stopPropagation()}
+            className="shrink-0 flex h-6 w-6 items-center justify-center rounded-full text-ink-body hover:bg-[#F3F4F6]"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="5" cy="12" r="1.6" />
+              <circle cx="12" cy="12" r="1.6" />
+              <circle cx="19" cy="12" r="1.6" />
+            </svg>
+          </button>
+        </div>
+        <p className="mt-0.5 text-[11px] text-ink-body">마지막 수정 {project.updatedAt}</p>
+
+        <div className="mt-2 flex items-center gap-2">
+          <div className="flex-1">
+            <ProgressBar progress={project.progress} />
+          </div>
+          <span className="shrink-0 text-[11px] font-bold text-primary">{project.progress}%</span>
+          <span className="shrink-0 rounded-badge bg-[#F3F4F6] px-2 py-0.5 text-[10px] font-medium text-ink-body">
+            {project.phase}
+          </span>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+function RecentProjectsSection({ onViewAll, onSelect }: { onViewAll: () => void; onSelect: (id: string) => void }) {
+  return (
+    <section className="animate-fadeIn min-w-0">
+      <div className="flex items-center justify-between">
+        <h2 className="text-[18px] font-bold text-ink-title">최근 프로젝트</h2>
+        <button onClick={onViewAll} className="flex items-center gap-0.5 text-[13px] font-medium text-primary">
+          전체 보기
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M9 6l6 6-6 6" />
+          </svg>
+        </button>
+      </div>
+
+      <ul className="mt-3.5 divide-y divide-[#ECEEF2] overflow-hidden rounded-[24px] border border-[#ECEEF2] bg-white">
+        {RECENT_PROJECTS.slice(0, 3).map((project) => (
+          <ProjectListItem key={project.id} project={project} onSelect={onSelect} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 /* ---------- 페이지: Home ---------- */
 
 function HomePage() {
   const navigate = useNavigate();
 
   const handleCreateProject = () => navigate("/project/create");
-  const handleStartWithAI = () => navigate("/project/create");
-  const handleViewAll = () => console.log("view all");
+  const handleStartWithAI = (idea: string) => navigate("/project/create", { state: { idea } });
+  const handleSelectProject = (id: string) => navigate(`/project/${id}`);
+  const handleViewAll = () => navigate("/projects");
 
   return (
     <main className="flex flex-1 flex-col gap-3 px-5 py-3 md:min-h-0 md:flex-row md:gap-6 md:overflow-hidden md:px-8 md:py-5 lg:gap-8 lg:px-10">
@@ -116,17 +233,125 @@ function HomePage() {
       {/* 우측 35%(Desktop): 최근 프로젝트 + 오늘 할 일 */}
       <div className="flex flex-col gap-3 md:min-h-0 md:w-[42%] md:flex-1 lg:w-[35%]">
         <div className="flex min-h-0 flex-1 flex-col md:min-h-0">
-          <RecentProjects onViewAll={handleViewAll} />
+          <RecentProjectsSection onViewAll={handleViewAll} onSelect={handleSelectProject} />
         </div>
         <div className="flex min-h-0 flex-1 flex-col md:min-h-0">
-          <TodayTasks onViewAll={handleViewAll} />
+          <TodayTasks onViewAll={() => navigate("/todo")} />
         </div>
       </div>
     </main>
   );
 }
 
-/* ---------- 페이지: Placeholder (신규 화면 공통) ---------- */
+/* ---------- 공통: 뒤로가기 버튼 ---------- */
+
+function BackButton({ label }: { label: string }) {
+  const navigate = useNavigate();
+  return (
+    <button
+      onClick={() => navigate("/")}
+      className="flex items-center gap-1 text-[14px] font-medium text-ink-body transition-colors hover:text-ink-title"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M15 6l-6 6 6 6" />
+      </svg>
+      {label}
+    </button>
+  );
+}
+
+/* ---------- 페이지: Project Create ---------- */
+
+function ProjectCreatePage() {
+  const location = useLocation();
+  const state = location.state as { idea?: string } | null;
+  const idea = state?.idea ?? localStorage.getItem(IDEA_STORAGE_KEY) ?? "";
+
+  const handleStartInterview = () => {
+    console.log("AI 인터뷰 시작하기 클릭 — 전달된 아이디어:", idea);
+  };
+
+  return (
+    <main className="flex flex-1 flex-col gap-4 px-5 py-4 animate-fadeIn md:mx-auto md:w-full md:max-w-[640px] md:py-8">
+      <BackButton label="Home으로 돌아가기" />
+
+      <h1 className="text-[24px] font-bold text-ink-title">프로젝트 만들기</h1>
+
+      <section className="rounded-[24px] border border-[#ECEEF2] bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+        <h2 className="text-[13px] font-semibold text-ink-body">입력한 아이디어</h2>
+        <p className="mt-2 whitespace-pre-wrap text-[15px] leading-relaxed text-ink-title">
+          {idea.trim().length > 0 ? idea : "아직 입력한 아이디어가 없습니다."}
+        </p>
+      </section>
+
+      <button
+        onClick={handleStartInterview}
+        className="flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)] transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+          <path d="M12 2l1.9 5.5L19.5 9l-5.6 1.5L12 16l-1.9-5.5L4.5 9l5.6-1.5L12 2z" />
+        </svg>
+        AI 인터뷰 시작하기
+      </button>
+    </main>
+  );
+}
+
+/* ---------- 페이지: Project Detail ---------- */
+
+function ProjectDetailPage() {
+  const { projectId } = useParams();
+  const project = RECENT_PROJECTS.find((p) => p.id === projectId);
+
+  if (!project) {
+    return (
+      <main className="flex flex-1 flex-col items-center justify-center gap-3 px-5 py-3 animate-fadeIn">
+        <p className="text-[15px] text-ink-body">프로젝트를 찾을 수 없습니다.</p>
+        <BackButton label="Home으로 돌아가기" />
+      </main>
+    );
+  }
+
+  return (
+    <main className="flex flex-1 flex-col gap-4 px-5 py-4 animate-fadeIn md:mx-auto md:w-full md:max-w-[640px] md:py-8">
+      <BackButton label="Home으로 돌아가기" />
+
+      <section className="rounded-[24px] border border-[#ECEEF2] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+        <div className="flex items-center gap-3">
+          <div
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl shadow-[0_6px_14px_-4px_rgba(79,107,255,0.4)]"
+            style={{ background: `linear-gradient(135deg, ${project.colorFrom}, ${project.colorTo})` }}
+          >
+            <ProjectIcon type={project.icon} />
+          </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-[20px] font-bold text-ink-title">{project.name}</h1>
+            <p className="mt-0.5 text-[12px] text-ink-body">마지막 수정 {project.updatedAt}</p>
+          </div>
+        </div>
+
+        <div className="mt-6">
+          <div className="flex items-center justify-between">
+            <span className="text-[13px] font-semibold text-ink-body">진행률</span>
+            <span className="text-[13px] font-bold text-primary">{project.progress}%</span>
+          </div>
+          <div className="mt-2">
+            <ProgressBar progress={project.progress} />
+          </div>
+        </div>
+
+        <div className="mt-5 flex items-center justify-between">
+          <span className="text-[13px] font-semibold text-ink-body">현재 단계</span>
+          <span className="rounded-badge bg-[#F3F4F6] px-3 py-1 text-[12px] font-medium text-ink-title">
+            {project.phase}
+          </span>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+/* ---------- 페이지: Placeholder (프로젝트 목록 / 오늘 할 일 / 설정) ---------- */
 
 function PlaceholderPage({ title, description }: { title: string; description: string }) {
   return (
@@ -285,9 +510,10 @@ export default function App() {
 
         <Routes>
           <Route path="/" element={<HomePage />} />
-          <Route path="/project/create" element={<PlaceholderPage title="프로젝트 만들기" description="프로젝트 생성 화면을 준비 중입니다." />} />
-          <Route path="/projects" element={<PlaceholderPage title="프로젝트" description="프로젝트 목록 화면을 준비 중입니다." />} />
-          <Route path="/todo" element={<PlaceholderPage title="할 일" description="할 일 화면을 준비 중입니다." />} />
+          <Route path="/project/create" element={<ProjectCreatePage />} />
+          <Route path="/project/:projectId" element={<ProjectDetailPage />} />
+          <Route path="/projects" element={<PlaceholderPage title="프로젝트 목록" description="프로젝트 목록 화면을 준비 중입니다." />} />
+          <Route path="/todo" element={<PlaceholderPage title="오늘 할 일" description="할 일 화면을 준비 중입니다." />} />
           <Route path="/setting" element={<PlaceholderPage title="설정" description="설정 화면을 준비 중입니다." />} />
         </Routes>
 
