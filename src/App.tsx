@@ -957,6 +957,7 @@ function InterviewPage() {
         progress: 25,
         interviewStep: INTERVIEW_STEPS.length,
         interviewAnswers: answers,
+        prd: null, // 답변이 바뀌었을 수 있으므로 기획서는 새로 생성
       });
       navigate("/project/summary");
       return;
@@ -1171,59 +1172,268 @@ function InterviewPage() {
   );
 }
 
-/* ---------- 페이지: 프로젝트 기획 요약 ---------- */
+/* ---------- AI 기획서(PRD) ---------- */
+
+interface TechStack {
+  frontend: string;
+  backend: string;
+  database: string;
+  deploy: string;
+}
+
+interface ProjectPRD {
+  title: string;
+  summary: string;
+  problem: string;
+  solution: string;
+  targetUsers: string[];
+  coreFeatures: string[];
+  userFlow: string[];
+  screens: string[];
+  database: string[];
+  apis: string[];
+  adminFeatures: string[];
+  developmentOrder: string[];
+  mvp: string[];
+  futureFeatures: string[];
+  techStack: TechStack;
+}
+
+interface GeneratePRDResponse {
+  success: boolean;
+  project?: ProjectPRD;
+  error?: string;
+}
+
+async function fetchGeneratePRD(idea: string, answers: InterviewAnswers): Promise<ProjectPRD> {
+  const response = await fetch("/api/project/generate-prd", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ idea, answers }),
+  });
+
+  if (!response.ok) throw new Error(`API error: ${response.status}`);
+
+  const data = (await response.json()) as GeneratePRDResponse;
+  if (!data.success || !data.project) throw new Error(data.error ?? "기획서 생성 실패");
+  return data.project;
+}
+
+function loadSavedPRD(): ProjectPRD | null {
+  const project = loadCurrentProject();
+  if (typeof project.prd === "object" && project.prd !== null) {
+    return project.prd as ProjectPRD;
+  }
+  return null;
+}
+
+function savePRD(prd: ProjectPRD) {
+  // 현재 프로젝트에 저장
+  updateCurrentProject({ prd, title: prd.title, status: "planned", step: "prd" });
+
+  // 프로젝트 목록에도 저장
+  try {
+    const current = loadCurrentProject();
+    const id = typeof current.id === "string" ? current.id : "";
+    if (!id) return;
+    const raw = localStorage.getItem(PROJECTS_LIST_KEY);
+    const list = raw ? (JSON.parse(raw) as Record<string, unknown>[]) : [];
+    if (!Array.isArray(list)) return;
+    const updated = list.map((p) =>
+      p.id === id ? { ...p, prd, title: prd.title, status: "planned", step: "prd", updatedAt: new Date().toISOString() } : p
+    );
+    localStorage.setItem(PROJECTS_LIST_KEY, JSON.stringify(updated));
+  } catch {
+    // 목록 저장 실패는 무시 (현재 프로젝트에는 저장됨)
+  }
+}
+
+/* ---------- 페이지: AI 기획서 화면 ---------- */
+
+function PRDSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="border-t border-[#ECEEF2] pt-4">
+      <h2 className="text-[15px] font-bold text-ink-title">{title}</h2>
+      <div className="mt-2">{children}</div>
+    </section>
+  );
+}
+
+function PRDList({ items, numbered = false }: { items: string[]; numbered?: boolean }) {
+  if (items.length === 0) return <p className="text-[14px] text-ink-body">-</p>;
+  return (
+    <ul className="flex flex-col gap-1.5">
+      {items.map((item, index) => (
+        <li key={item} className="flex items-start gap-2 text-[14px] leading-relaxed text-ink-title">
+          {numbered ? (
+            <span className="mt-[1px] shrink-0 text-[13px] font-bold text-primary">{index + 1}.</span>
+          ) : (
+            <span className="mt-[9px] h-1 w-1 shrink-0 rounded-full bg-primary" aria-hidden="true" />
+          )}
+          {item}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+type PRDStatus = "ready" | "loading" | "error";
 
 function SummaryPage() {
-  const project = loadCurrentProject();
-  const idea = loadCurrentIdea();
-  const answers: InterviewAnswers = {
-    ...EMPTY_ANSWERS,
-    ...(typeof project.interviewAnswers === "object" && project.interviewAnswers !== null
-      ? (project.interviewAnswers as Partial<InterviewAnswers>)
-      : {}),
-  };
+  const [idea] = useState(() => loadCurrentIdea());
+  const [answers] = useState<InterviewAnswers>(() => {
+    const project = loadCurrentProject();
+    const saved =
+      typeof project.interviewAnswers === "object" && project.interviewAnswers !== null
+        ? (project.interviewAnswers as Partial<InterviewAnswers>)
+        : {};
+    return { ...EMPTY_ANSWERS, ...saved };
+  });
+  const [prd, setPrd] = useState<ProjectPRD | null>(() => loadSavedPRD());
+  const [status, setStatus] = useState<PRDStatus>(() => (loadSavedPRD() ? "ready" : "loading"));
 
-  const rows: { label: string; value: string }[] = [
-    { label: "입력한 아이디어", value: idea },
-    { label: "대상 사용자", value: answers.targetUser },
-    { label: "핵심 기능", value: answers.coreFeatures },
-    { label: "사용 플랫폼", value: answers.platform },
-    { label: "로그인 필요 여부", value: answers.auth },
-    { label: "결제 필요 여부", value: answers.payment },
-    { label: "추가 요청사항", value: answers.additional },
-  ];
+  useEffect(() => {
+    if (prd || status !== "loading") return;
+    let cancelled = false;
 
-  const handleGenerate = () => {
-    console.log("기획서 생성하기 클릭:", { idea, answers });
-  };
+    (async () => {
+      try {
+        const generated = await fetchGeneratePRD(idea, answers);
+        if (cancelled) return;
+        savePRD(generated);
+        setPrd(generated);
+        setStatus("ready");
+      } catch {
+        if (!cancelled) setStatus("error");
+      }
+    })();
 
+    return () => {
+      cancelled = true;
+    };
+  }, [prd, status, idea, answers]);
+
+  const handleRetry = () => setStatus("loading");
+
+  // 생성 중 화면
+  if (status === "loading") {
+    return (
+      <main className="flex flex-1 flex-col items-center justify-center gap-4 px-5 pt-4 pb-[140px] animate-fadeIn md:pb-12">
+        <span className="h-10 w-10 animate-spin rounded-full border-[3px] border-primary/20 border-t-primary" aria-hidden="true" />
+        <div className="text-center">
+          <p className="text-[16px] font-semibold text-ink-title">AI가 프로젝트를 분석하고 있습니다.</p>
+          <p className="mt-1 text-[14px] text-ink-body">기획서를 생성하는 중입니다. (예상 5~15초)</p>
+        </div>
+      </main>
+    );
+  }
+
+  // 실패 화면
+  if (status === "error" || !prd) {
+    return (
+      <main className="flex flex-1 flex-col items-center justify-center gap-4 px-5 pt-4 pb-[140px] animate-fadeIn md:pb-12">
+        <p className="text-[16px] font-semibold text-ink-title">생성 실패</p>
+        <p className="text-[14px] text-ink-body">기획서 생성에 실패했습니다. 잠시 후 다시 시도해주세요.</p>
+        <button
+          onClick={handleRetry}
+          className="flex h-[48px] w-full max-w-[280px] items-center justify-center rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)] transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
+        >
+          다시 시도
+        </button>
+      </main>
+    );
+  }
+
+  // 기획서 화면
   return (
     <main className="flex flex-1 flex-col px-5 pt-4 pb-[140px] animate-fadeIn md:items-center md:pt-10 md:pb-12">
       <div className="flex w-full flex-col gap-4 md:max-w-[680px]">
-        <section className="rounded-[24px] border border-[#ECEEF2] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:p-8">
-          <h1 className="text-[24px] font-bold text-ink-title">프로젝트 기획 요약</h1>
+        <section className="flex flex-col gap-4 rounded-[24px] border border-[#ECEEF2] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:p-8">
+          <div>
+            <span className="text-[12px] font-semibold text-primary">AI 기획서</span>
+            <h1 className="mt-1 text-[24px] font-bold leading-snug text-ink-title">{prd.title}</h1>
+            <p className="mt-2 text-[15px] leading-relaxed text-ink-body">{prd.summary}</p>
+          </div>
 
-          <ul className="mt-5 divide-y divide-[#ECEEF2] overflow-hidden rounded-2xl border border-[#E5E8EB]">
-            {rows.map((row) => (
-              <li key={row.label} className="bg-[#F8FAFC] px-4 py-3">
-                <h2 className="text-[12px] font-semibold text-ink-body">{row.label}</h2>
-                <p className="mt-0.5 whitespace-pre-wrap text-[14px] leading-relaxed text-ink-title">
-                  {row.value.trim().length > 0 ? row.value : "-"}
-                </p>
-              </li>
-            ))}
-          </ul>
+          <PRDSection title="해결하려는 문제">
+            <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-ink-title">{prd.problem}</p>
+          </PRDSection>
 
-          <button
-            onClick={handleGenerate}
-            className="mt-5 flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)] transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M6 3h9l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
-              <path d="M14 3v5h5M9 13h6M9 17h6" />
-            </svg>
-            기획서 생성하기
-          </button>
+          <PRDSection title="서비스 설명">
+            <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-ink-title">{prd.solution}</p>
+          </PRDSection>
+
+          <PRDSection title="대상 사용자">
+            <PRDList items={prd.targetUsers} />
+          </PRDSection>
+
+          <PRDSection title="핵심 기능">
+            <PRDList items={prd.coreFeatures} />
+          </PRDSection>
+
+          {prd.userFlow.length > 0 && (
+            <PRDSection title="사용자 플로우">
+              <div className="flex flex-wrap items-center gap-y-1.5 rounded-2xl bg-[#F8FAFC] px-4 py-3">
+                {prd.userFlow.map((flow, index) => (
+                  <span key={flow + index} className="flex items-center text-[13px] font-medium text-ink-title">
+                    {flow}
+                    {index < prd.userFlow.length - 1 && <span className="mx-1.5 text-primary" aria-hidden="true">→</span>}
+                  </span>
+                ))}
+              </div>
+            </PRDSection>
+          )}
+
+          <PRDSection title="화면 구성">
+            <PRDList items={prd.screens} />
+          </PRDSection>
+
+          <PRDSection title="DB 구조">
+            <PRDList items={prd.database} />
+          </PRDSection>
+
+          <PRDSection title="API 목록">
+            <ul className="flex flex-col gap-1.5 rounded-2xl bg-[#F8FAFC] px-4 py-3">
+              {prd.apis.length === 0 && <li className="text-[13px] text-ink-body">-</li>}
+              {prd.apis.map((api) => (
+                <li key={api} className="break-all font-mono text-[12.5px] leading-relaxed text-ink-title">
+                  {api}
+                </li>
+              ))}
+            </ul>
+          </PRDSection>
+
+          <PRDSection title="관리자 기능">
+            <PRDList items={prd.adminFeatures} />
+          </PRDSection>
+
+          <PRDSection title="개발 순서">
+            <PRDList items={prd.developmentOrder} numbered />
+          </PRDSection>
+
+          <PRDSection title="MVP 범위">
+            <PRDList items={prd.mvp} />
+          </PRDSection>
+
+          <PRDSection title="추후 업데이트">
+            <PRDList items={prd.futureFeatures} />
+          </PRDSection>
+
+          <PRDSection title="추천 기술스택">
+            <ul className="flex flex-col divide-y divide-[#ECEEF2] overflow-hidden rounded-2xl border border-[#E5E8EB]">
+              {[
+                { label: "Frontend", value: prd.techStack.frontend },
+                { label: "Backend", value: prd.techStack.backend },
+                { label: "Database", value: prd.techStack.database },
+                { label: "Deploy", value: prd.techStack.deploy },
+              ].map((row) => (
+                <li key={row.label} className="bg-[#F8FAFC] px-4 py-3">
+                  <h3 className="text-[12px] font-semibold text-ink-body">{row.label}</h3>
+                  <p className="mt-0.5 text-[14px] leading-relaxed text-ink-title">{row.value || "-"}</p>
+                </li>
+              ))}
+            </ul>
+          </PRDSection>
         </section>
       </div>
     </main>
