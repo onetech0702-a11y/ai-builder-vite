@@ -1,6 +1,6 @@
 /* OneTech AI Builder - AI 인터뷰 추천 API (Vercel Serverless Function)
  * POST /api/interview/recommend
- * API Key는 서버 환경변수(OPENAI_API_KEY)에서만 사용한다. 프론트 노출 금지.
+ * Claude(Anthropic) API 사용. API Key는 서버 환경변수(ANTHROPIC_API_KEY)에서만 사용한다. 프론트 노출 금지.
  */
 
 declare const process: { env: Record<string, string | undefined> };
@@ -68,7 +68,7 @@ const SYSTEM_PROMPT = `당신은 OneTech AI Builder의 전문 IT 서비스 기�
 
 답변은 초보자도 이해할 수 있게 작성하세요.
 
-반드시 JSON으로만 응답하세요.
+반드시 JSON으로만 응답하세요. JSON 앞뒤에 다른 텍스트나 마크다운 코드블록을 절대 붙이지 마세요.
 
 JSON 형식:
 {
@@ -107,9 +107,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return;
   }
 
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    res.status(500).json({ success: false, error: "OPENAI_API_KEY is not configured" });
+    res.status(500).json({ success: false, error: "ANTHROPIC_API_KEY is not configured" });
     return;
   }
 
@@ -122,21 +122,18 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   };
 
   try {
-    const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
-        temperature: 0.7,
-        max_tokens: 700,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: JSON.stringify(userPayload) },
-        ],
+        model: "claude-sonnet-4-6",
+        max_tokens: 800,
+        system: SYSTEM_PROMPT,
+        messages: [{ role: "user", content: JSON.stringify(userPayload) }],
       }),
     });
 
@@ -147,10 +144,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     const data = (await aiResponse.json()) as {
-      choices?: { message?: { content?: string } }[];
+      content?: { type: string; text?: string }[];
     };
-    const content = data.choices?.[0]?.message?.content ?? "";
-    const parsed = JSON.parse(content) as Partial<Recommendation>;
+    const rawText = (data.content ?? [])
+      .map((block) => (block.type === "text" ? block.text ?? "" : ""))
+      .join("")
+      .trim();
+
+    // 혹시 코드블록으로 감싸서 응답한 경우 제거 후 파싱
+    const cleaned = rawText.replace(/```json|```/g, "").trim();
+    const parsed = JSON.parse(cleaned) as Partial<Recommendation>;
 
     const recommendation: Recommendation = {
       answer: typeof parsed.answer === "string" ? parsed.answer : "",

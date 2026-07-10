@@ -685,7 +685,7 @@ function rec(answer: string, reasons: string[], applyValue?: string): AIRecommen
 
 const RECOMMENDATION_PRESETS: { keywords: string[]; set: RecommendationSet }[] = [
   {
-    keywords: ["독서", "책"],
+    keywords: ["독서", "북클럽", "책 기록"],
     set: {
       targetUser: rec("책을 꾸준히 읽고 싶은 사람, 독서 습관을 만들고 싶은 사용자", [
         "독서앱은 읽은 책을 기록하고 독서 루틴을 만드는 사용자가 주로 사용합니다",
