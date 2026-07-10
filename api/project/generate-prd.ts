@@ -148,7 +148,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 3000,
+        max_tokens: 6000,
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: JSON.stringify({ idea, answers }) }],
       }),
@@ -162,13 +162,36 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     const data = (await aiResponse.json()) as {
       content?: { type: string; text?: string }[];
+      stop_reason?: string;
     };
+
+    if (data.stop_reason === "max_tokens") {
+      res.status(502).json({ success: false, error: "AI 응답이 길이 제한으로 잘렸습니다. 다시 시도해주세요." });
+      return;
+    }
+
     const rawText = (data.content ?? [])
       .map((block) => (block.type === "text" ? block.text ?? "" : ""))
       .join("")
       .trim();
+
+    // JSON 본문만 안전하게 추출 (앞뒤에 다른 텍스트가 붙어도 파싱)
     const cleaned = rawText.replace(/```json|```/g, "").trim();
-    const parsed = JSON.parse(cleaned) as Partial<ProjectPRD> & { techStack?: Partial<TechStack> };
+    const firstBrace = cleaned.indexOf("{");
+    const lastBrace = cleaned.lastIndexOf("}");
+    if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+      res.status(502).json({ success: false, error: `AI 응답 형식 오류: ${cleaned.slice(0, 120)}` });
+      return;
+    }
+    const jsonText = cleaned.slice(firstBrace, lastBrace + 1);
+
+    let parsed: Partial<ProjectPRD> & { techStack?: Partial<TechStack> };
+    try {
+      parsed = JSON.parse(jsonText) as Partial<ProjectPRD> & { techStack?: Partial<TechStack> };
+    } catch {
+      res.status(502).json({ success: false, error: "AI 응답 JSON 파싱 실패. 다시 시도해주세요." });
+      return;
+    }
 
     const project: ProjectPRD = {
       title: typeof parsed.title === "string" ? parsed.title : "",
