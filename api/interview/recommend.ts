@@ -62,6 +62,15 @@ const REFUSAL_RECOMMENDATION: Recommendation = {
   extraQuestions: ["합법적인 방향으로 바꿔볼까요?", "예방/탐지/교육용 서비스로 전환할까요?"],
 };
 
+// 깨진 문자(�), 제어 문자 제거
+function cleanText(value: string): string {
+  return value
+    .replace(/\uFFFD/g, "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 const SYSTEM_PROMPT = `당신은 OneTech AI Builder의 전문 IT 서비스 기획자입니다.
 
 사용자가 만들고 싶은 웹/앱 아이디어를 분석하고, 현재 인터뷰 질문에 맞는 가장 적절한 추천 답변을 작성하세요.
@@ -86,6 +95,7 @@ JSON 형식:
 - 선택지(options)가 주어진 질문이면 applyValue는 반드시 선택지 중 하나와 정확히 일치해야 합니다.
 - 선택지가 없는 질문이면 applyValue는 입력창에 바로 넣을 수 있는 구체적인 문장으로 작성하세요.
 - extraQuestions는 사용자가 추가로 생각해보면 좋은 질문 1~2개를 제안하세요.
+- 모든 텍스트는 완전하고 올바른 한국어로 작성하세요. 깨진 문자, 이상한 기호, 오타가 절대 없어야 합니다. 기술명은 정확한 공식 표기(React, React Native, PostgreSQL 등)를 사용하세요.
 - 불법 도박, 피싱, 해킹, 개인정보 탈취, 금융 사기, 마약, 불법 성인물, 위조, 저작권 침해, 폭력/혐오 조장, 불법 무기 거래 등 불법이거나 피해를 유발하는 서비스 제작은 거부하세요. 거부 시 answer에 "이 요청은 불법 또는 피해를 유발할 수 있어 제작을 도와드릴 수 없습니다."라고 쓰고 applyValue는 빈 문자열로 두세요.`;
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
@@ -156,11 +166,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const parsed = JSON.parse(cleaned) as Partial<Recommendation>;
 
     const recommendation: Recommendation = {
-      answer: typeof parsed.answer === "string" ? parsed.answer : "",
-      reason: typeof parsed.reason === "string" ? parsed.reason : "",
-      applyValue: typeof parsed.applyValue === "string" ? parsed.applyValue : "",
+      answer: typeof parsed.answer === "string" ? cleanText(parsed.answer) : "",
+      reason: typeof parsed.reason === "string" ? cleanText(parsed.reason) : "",
+      applyValue: typeof parsed.applyValue === "string" ? cleanText(parsed.applyValue) : "",
       extraQuestions: Array.isArray(parsed.extraQuestions)
-        ? parsed.extraQuestions.filter((q): q is string => typeof q === "string").slice(0, 3)
+        ? parsed.extraQuestions
+            .filter((q): q is string => typeof q === "string")
+            .map(cleanText)
+            .filter((q) => q.length > 0)
+            .slice(0, 3)
         : [],
     };
 

@@ -107,11 +107,31 @@ JSON 형식:
 - 로그인이 "필요 없습니다"면 회원 관련 기능을 최소화하세요.
 - 플랫폼 답변에 맞는 기술스택을 추천하세요.
 - 각 항목은 구체적이되 간결하게 작성하세요. 항목당 설명은 1문장이면 충분합니다.
+- 모든 텍스트는 완전하고 올바른 한국어로 작성하세요. 깨진 문자, 이상한 기호, 오타가 절대 없어야 합니다.
+- 기술명은 반드시 정확한 공식 표기를 사용하세요. 예: React, React Native, Next.js, Express.js, Node.js, PostgreSQL, MySQL, MongoDB, Supabase, Firebase, Redis, AWS S3, Vercel, Docker. 임의로 줄이거나 변형하지 마세요.
+- 외래어는 관례적 한글 표기(프리미엄, 커뮤니티, 타임라인 등)를 정확히 쓰세요.
 - 불법이거나 피해를 유발하는 서비스는 기획서를 작성하지 말고 title에 "제작 불가"라고 쓰세요.`;
+
+// 깨진 문자(�), 제어 문자 제거
+function cleanText(value: string): string {
+  return value
+    .replace(/\uFFFD/g, "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
 
 function toStringArray(value: unknown, max = 20): string[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((v): v is string => typeof v === "string").slice(0, max);
+  return value
+    .filter((v): v is string => typeof v === "string")
+    .map(cleanText)
+    .filter((v) => v.length > 0)
+    .slice(0, max);
+}
+
+function toCleanString(value: unknown): string {
+  return typeof value === "string" ? cleanText(value) : "";
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
@@ -149,6 +169,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       body: JSON.stringify({
         model: "claude-haiku-4-5",  // 기획서는 60초 제한 안에 생성돼야 하므로 빠른 모델 사용
         max_tokens: 6000,
+        temperature: 0.4,  // 표기 오류를 줄이기 위해 낮은 온도 사용
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: JSON.stringify({ idea, answers }) }],
       }),
@@ -194,10 +215,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     const project: ProjectPRD = {
-      title: typeof parsed.title === "string" ? parsed.title : "",
-      summary: typeof parsed.summary === "string" ? parsed.summary : "",
-      problem: typeof parsed.problem === "string" ? parsed.problem : "",
-      solution: typeof parsed.solution === "string" ? parsed.solution : "",
+      title: toCleanString(parsed.title),
+      summary: toCleanString(parsed.summary),
+      problem: toCleanString(parsed.problem),
+      solution: toCleanString(parsed.solution),
       targetUsers: toStringArray(parsed.targetUsers),
       coreFeatures: toStringArray(parsed.coreFeatures),
       userFlow: toStringArray(parsed.userFlow),
@@ -209,10 +230,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       mvp: toStringArray(parsed.mvp),
       futureFeatures: toStringArray(parsed.futureFeatures),
       techStack: {
-        frontend: typeof parsed.techStack?.frontend === "string" ? parsed.techStack.frontend : "",
-        backend: typeof parsed.techStack?.backend === "string" ? parsed.techStack.backend : "",
-        database: typeof parsed.techStack?.database === "string" ? parsed.techStack.database : "",
-        deploy: typeof parsed.techStack?.deploy === "string" ? parsed.techStack.deploy : "",
+        frontend: toCleanString(parsed.techStack?.frontend),
+        backend: toCleanString(parsed.techStack?.backend),
+        database: toCleanString(parsed.techStack?.database),
+        deploy: toCleanString(parsed.techStack?.deploy),
       },
     };
 
