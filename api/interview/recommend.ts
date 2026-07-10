@@ -66,6 +66,7 @@ const REFUSAL_RECOMMENDATION: Recommendation = {
 function cleanText(value: string): string {
   return value
     .replace(/\uFFFD/g, "")
+    // eslint-disable-next-line no-control-regex -- 제어 문자 제거가 목적인 정제 로직
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
     .replace(/[ \t]{2,}/g, " ")
     .trim();

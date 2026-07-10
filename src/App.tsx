@@ -1205,11 +1205,16 @@ interface GeneratePRDResponse {
   error?: string;
 }
 
-async function fetchGeneratePRD(idea: string, answers: InterviewAnswers): Promise<ProjectPRD> {
+async function fetchGeneratePRD(
+  idea: string,
+  answers: InterviewAnswers,
+  instruction?: string,
+  currentPrd?: ProjectPRD
+): Promise<ProjectPRD> {
   const response = await fetch("/api/project/generate-prd", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ idea, answers }),
+    body: JSON.stringify({ idea, answers, instruction, currentPrd }),
   });
 
   if (!response.ok) throw new Error(`API error: ${response.status}`);
@@ -1241,6 +1246,82 @@ function savePRD(prd: ProjectPRD) {
     if (!Array.isArray(list)) return;
     const updated = list.map((p) =>
       p.id === id ? { ...p, prd, title: prd.title, status: "planned", step: "prd", updatedAt: new Date().toISOString() } : p
+    );
+    localStorage.setItem(PROJECTS_LIST_KEY, JSON.stringify(updated));
+  } catch {
+    // 목록 저장 실패는 무시 (현재 프로젝트에는 저장됨)
+  }
+}
+
+/* ---------- AI UI 목업 ---------- */
+
+interface UIScreen {
+  id: string;
+  name: string;
+  description: string;
+  components: string[];
+}
+
+interface ProjectUI {
+  theme: string;
+  navigation: string;
+  flow: string[];
+  screens: UIScreen[];
+}
+
+interface GenerateUIResponse {
+  success: boolean;
+  ui?: ProjectUI;
+  error?: string;
+}
+
+async function fetchGenerateUI(prd: ProjectPRD, instruction?: string, currentUi?: ProjectUI): Promise<ProjectUI> {
+  const response = await fetch("/api/project/generate-ui", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      project: {
+        title: prd.title,
+        summary: prd.summary,
+        targetUsers: prd.targetUsers,
+        coreFeatures: prd.coreFeatures,
+        screens: prd.screens,
+        database: prd.database,
+        apis: prd.apis,
+        mvp: prd.mvp,
+      },
+      instruction,
+      currentUi,
+    }),
+  });
+
+  if (!response.ok) throw new Error(`API error: ${response.status}`);
+
+  const data = (await response.json()) as GenerateUIResponse;
+  if (!data.success || !data.ui) throw new Error(data.error ?? "UI 생성 실패");
+  return data.ui;
+}
+
+function loadSavedUI(): ProjectUI | null {
+  const project = loadCurrentProject();
+  if (typeof project.ui === "object" && project.ui !== null) {
+    return project.ui as ProjectUI;
+  }
+  return null;
+}
+
+function saveUI(ui: ProjectUI) {
+  updateCurrentProject({ ui, status: "mockup", step: "ui-mockup" });
+
+  try {
+    const current = loadCurrentProject();
+    const id = typeof current.id === "string" ? current.id : "";
+    if (!id) return;
+    const raw = localStorage.getItem(PROJECTS_LIST_KEY);
+    const list = raw ? (JSON.parse(raw) as Record<string, unknown>[]) : [];
+    if (!Array.isArray(list)) return;
+    const updated = list.map((p) =>
+      p.id === id ? { ...p, ui, status: "mockup", step: "ui-mockup", updatedAt: new Date().toISOString() } : p
     );
     localStorage.setItem(PROJECTS_LIST_KEY, JSON.stringify(updated));
   } catch {
@@ -1291,6 +1372,9 @@ function SummaryPage() {
   });
   const [prd, setPrd] = useState<ProjectPRD | null>(() => loadSavedPRD());
   const [status, setStatus] = useState<PRDStatus>(() => (loadSavedPRD() ? "ready" : "loading"));
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editRequest, setEditRequest] = useState("");
+  const pendingEditRef = useRef<{ instruction: string; prd: ProjectPRD } | null>(null);
 
   useEffect(() => {
     if (prd || status !== "loading") return;
@@ -1298,7 +1382,9 @@ function SummaryPage() {
 
     (async () => {
       try {
-        const generated = await fetchGeneratePRD(idea, answers);
+        const pending = pendingEditRef.current;
+        pendingEditRef.current = null;
+        const generated = await fetchGeneratePRD(idea, answers, pending?.instruction, pending?.prd);
         if (cancelled) return;
         savePRD(generated);
         setPrd(generated);
@@ -1314,6 +1400,25 @@ function SummaryPage() {
   }, [prd, status, idea, answers]);
 
   const handleRetry = () => setStatus("loading");
+
+  const navigate = useNavigate();
+
+  // 기획서 수정: 요청사항 입력 후 AI 재생성
+  const handleEditRegenerate = () => {
+    if (!prd || editRequest.trim().length === 0) return;
+    pendingEditRef.current = { instruction: editRequest.trim(), prd };
+    setIsEditOpen(false);
+    setEditRequest("");
+    setPrd(null);
+    setStatus("loading");
+    window.scrollTo(0, 0);
+  };
+
+  // 인터뷰 다시하기: 기존 답변 유지, 1단계부터
+  const handleRedoInterview = () => {
+    updateCurrentProject({ interviewStep: 1 });
+    navigate("/project/interview");
+  };
 
   // 생성 중 화면
   if (status === "loading") {
@@ -1435,6 +1540,419 @@ function SummaryPage() {
             </ul>
           </PRDSection>
         </section>
+
+        {/* 다음 단계 버튼 */}
+        <div className="flex flex-col gap-2.5">
+          <button
+            onClick={() => navigate("/project/mockup")}
+            className="flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)] transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="4" y="3" width="16" height="18" rx="2.5" />
+              <path d="M4 8h16M9 21V8" />
+            </svg>
+            UI 목업 생성
+          </button>
+
+          <button
+            onClick={() => setIsEditOpen((prev) => !prev)}
+            className="flex h-[48px] w-full items-center justify-center rounded-2xl border border-[#E5E8EB] bg-white text-[14px] font-semibold text-ink-title transition-colors duration-200 hover:border-[#D1D5DB]"
+          >
+            기획서 수정
+          </button>
+
+          {isEditOpen && (
+            <div className="animate-fadeIn rounded-[20px] border border-[#E5E8EB] bg-white p-4">
+              <h3 className="text-[13px] font-semibold text-ink-title">어떻게 수정할까요?</h3>
+              <textarea
+                value={editRequest}
+                onChange={(e) => setEditRequest(e.target.value)}
+                placeholder="예: 결제 기능 빼줘 / 커뮤니티 기능 추가해줘 / MVP를 더 작게 줄여줘"
+                className="mt-2 min-h-[80px] w-full resize-none rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3 text-base leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <button
+                onClick={handleEditRegenerate}
+                disabled={editRequest.trim().length === 0}
+                className="mt-2 flex h-[44px] w-full items-center justify-center rounded-2xl bg-primary text-[14px] font-semibold text-white transition-all duration-200 enabled:hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                AI 재생성
+              </button>
+            </div>
+          )}
+
+          <button
+            onClick={handleRedoInterview}
+            className="flex h-[48px] w-full items-center justify-center rounded-2xl border border-[#E5E8EB] bg-white text-[14px] font-semibold text-ink-body transition-colors duration-200 hover:border-[#D1D5DB] hover:text-ink-title"
+          >
+            인터뷰 다시하기
+          </button>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+/* ---------- 페이지: UI 목업 ---------- */
+
+// 컴포넌트 이름을 목업 블록으로 변환
+function MockBlock({ label }: { label: string }) {
+  const has = (...keys: string[]) => keys.some((k) => label.includes(k));
+
+  if (has("검색")) {
+    return (
+      <div className="flex h-9 items-center gap-2 rounded-xl bg-[#F3F4F6] px-3">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
+        </svg>
+        <span className="text-[11px] text-[#9CA3AF]">{label}</span>
+      </div>
+    );
+  }
+  if (has("배너")) {
+    return <div className="flex h-16 items-center justify-center rounded-xl bg-gradient-to-r from-primary/70 to-accent/60 text-[11px] font-semibold text-white">{label}</div>;
+  }
+  if (has("차트", "그래프", "통계")) {
+    return (
+      <div className="rounded-xl border border-[#ECEEF2] p-3">
+        <p className="text-[10px] font-semibold text-ink-body">{label}</p>
+        <div className="mt-2 flex h-14 items-end gap-1.5">
+          {[40, 65, 50, 80, 60, 90, 70].map((h, i) => (
+            <div key={i} className="flex-1 rounded-t bg-primary/70" style={{ height: `${h}%` }} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (has("카드")) {
+    return (
+      <div className="grid grid-cols-2 gap-2">
+        {[0, 1].map((i) => (
+          <div key={i} className="rounded-xl border border-[#ECEEF2] p-2.5">
+            <div className="h-10 rounded-lg bg-[#F3F4F6]" />
+            <div className="mt-1.5 h-2 w-3/4 rounded bg-[#E5E8EB]" />
+            <div className="mt-1 h-2 w-1/2 rounded bg-[#F3F4F6]" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (has("리스트", "목록", "알림", "체크")) {
+    return (
+      <div className="divide-y divide-[#ECEEF2] rounded-xl border border-[#ECEEF2]">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="flex items-center gap-2 px-3 py-2">
+            <div className="h-6 w-6 shrink-0 rounded-lg bg-[#F3F4F6]" />
+            <div className="min-w-0 flex-1">
+              <div className="h-2 w-2/3 rounded bg-[#E5E8EB]" />
+              <div className="mt-1 h-2 w-1/3 rounded bg-[#F3F4F6]" />
+            </div>
+          </div>
+        ))}
+        <p className="px-3 py-1.5 text-[9px] text-ink-body">{label}</p>
+      </div>
+    );
+  }
+  if (has("프로필")) {
+    return (
+      <div className="flex items-center gap-2.5 rounded-xl border border-[#ECEEF2] p-3">
+        <div className="h-10 w-10 shrink-0 rounded-full bg-[#E5E8EB]" />
+        <div className="min-w-0 flex-1">
+          <div className="h-2.5 w-1/2 rounded bg-[#E5E8EB]" />
+          <div className="mt-1.5 h-2 w-2/3 rounded bg-[#F3F4F6]" />
+        </div>
+      </div>
+    );
+  }
+  if (has("이미지", "사진", "갤러리")) {
+    return (
+      <div className="grid grid-cols-3 gap-1.5">
+        {[0, 1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="aspect-square rounded-lg bg-[#F3F4F6]" />
+        ))}
+      </div>
+    );
+  }
+  if (has("캘린더", "달력", "일정")) {
+    return (
+      <div className="rounded-xl border border-[#ECEEF2] p-3">
+        <p className="text-[10px] font-semibold text-ink-body">{label}</p>
+        <div className="mt-2 grid grid-cols-7 gap-1">
+          {Array.from({ length: 21 }).map((_, i) => (
+            <div key={i} className={"aspect-square rounded " + (i === 9 ? "bg-primary/70" : "bg-[#F3F4F6]")} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (has("탭")) {
+    return (
+      <div className="flex gap-1 rounded-xl bg-[#F3F4F6] p-1">
+        {["탭 1", "탭 2", "탭 3"].map((t, i) => (
+          <div key={t} className={"flex-1 rounded-lg py-1.5 text-center text-[10px] font-medium " + (i === 0 ? "bg-white text-ink-title shadow-sm" : "text-ink-body")}>{t}</div>
+        ))}
+      </div>
+    );
+  }
+  if (has("입력", "폼")) {
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="h-9 rounded-xl border border-[#E5E8EB] bg-[#F8FAFC] px-3 py-2.5 text-[10px] text-[#9CA3AF]">{label}</div>
+        <div className="h-9 rounded-xl border border-[#E5E8EB] bg-[#F8FAFC]" />
+      </div>
+    );
+  }
+  if (has("지도")) {
+    return (
+      <div className="relative h-20 overflow-hidden rounded-xl bg-[#E8F0E9]">
+        <div className="absolute left-1/4 top-1/3 h-2 w-2 rounded-full bg-primary" />
+        <div className="absolute left-2/3 top-1/2 h-2 w-2 rounded-full bg-accent" />
+        <p className="absolute bottom-1 right-2 text-[9px] text-ink-body">{label}</p>
+      </div>
+    );
+  }
+  if (has("채팅")) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <div className="max-w-[70%] self-start rounded-2xl rounded-tl-sm bg-[#F3F4F6] px-3 py-1.5 text-[10px] text-ink-body">메시지</div>
+        <div className="max-w-[70%] self-end rounded-2xl rounded-tr-sm bg-primary/80 px-3 py-1.5 text-[10px] text-white">답장</div>
+      </div>
+    );
+  }
+  if (has("FAB")) {
+    return (
+      <div className="flex justify-end">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-white shadow-lg">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        </div>
+      </div>
+    );
+  }
+  if (has("버튼")) {
+    return <div className="flex h-10 items-center justify-center rounded-xl bg-primary text-[11px] font-semibold text-white">{label}</div>;
+  }
+  if (has("메뉴", "설정")) {
+    return (
+      <div className="divide-y divide-[#ECEEF2] rounded-xl border border-[#ECEEF2]">
+        {[label, "항목", "항목"].map((t, i) => (
+          <div key={i} className="flex items-center justify-between px-3 py-2 text-[10px] text-ink-title">
+            {t}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return <div className="flex h-10 items-center justify-center rounded-xl border border-dashed border-[#D1D5DB] text-[10px] text-ink-body">{label}</div>;
+}
+
+type MockupStatus = "ready" | "loading" | "error";
+
+function MockupPage() {
+  const navigate = useNavigate();
+  const [prd] = useState<ProjectPRD | null>(() => loadSavedPRD());
+  const [ui, setUi] = useState<ProjectUI | null>(() => loadSavedUI());
+  const [status, setStatus] = useState<MockupStatus>(() => (loadSavedUI() ? "ready" : "loading"));
+  const [selectedId, setSelectedId] = useState<string>(() => loadSavedUI()?.screens[0]?.id ?? "");
+  const [instruction, setInstruction] = useState("");
+  const pendingInstructionRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (!prd || status !== "loading") return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const pending = pendingInstructionRef.current;
+        pendingInstructionRef.current = undefined;
+        const generated = await fetchGenerateUI(prd, pending, pending ? ui ?? undefined : undefined);
+        if (cancelled) return;
+        saveUI(generated);
+        setUi(generated);
+        setSelectedId((prev) => (generated.screens.some((sc) => sc.id === prev) ? prev : generated.screens[0]?.id ?? ""));
+        setStatus("ready");
+      } catch {
+        if (!cancelled) setStatus("error");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [prd, status, ui]);
+
+  // 기획서가 없으면 목업을 만들 수 없음
+  if (!prd) {
+    return (
+      <main className="flex flex-1 flex-col items-center justify-center gap-3 px-5 pt-4 pb-[140px] animate-fadeIn md:pb-12">
+        <p className="text-[15px] text-ink-body">먼저 인터뷰를 완료하고 기획서를 생성해주세요.</p>
+        <button
+          onClick={() => navigate("/project/summary")}
+          className="flex h-[48px] w-full max-w-[280px] items-center justify-center rounded-2xl bg-primary text-[15px] font-semibold text-white"
+        >
+          기획서 화면으로
+        </button>
+      </main>
+    );
+  }
+
+  if (status === "loading") {
+    return (
+      <main className="flex flex-1 flex-col items-center justify-center gap-4 px-5 pt-4 pb-[140px] animate-fadeIn md:pb-12">
+        <span className="h-10 w-10 animate-spin rounded-full border-[3px] border-primary/20 border-t-primary" aria-hidden="true" />
+        <div className="text-center">
+          <p className="text-[16px] font-semibold text-ink-title">AI가 화면을 설계하고 있습니다.</p>
+          <p className="mt-1 text-[14px] text-ink-body">UI 목업을 생성하는 중입니다. (예상 5~15초)</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (status === "error" || !ui) {
+    return (
+      <main className="flex flex-1 flex-col items-center justify-center gap-4 px-5 pt-4 pb-[140px] animate-fadeIn md:pb-12">
+        <p className="text-[16px] font-semibold text-ink-title">생성 실패</p>
+        <p className="text-[14px] text-ink-body">UI 목업 생성에 실패했습니다. 잠시 후 다시 시도해주세요.</p>
+        <button
+          onClick={() => setStatus("loading")}
+          className="flex h-[48px] w-full max-w-[280px] items-center justify-center rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)] transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
+        >
+          다시 시도
+        </button>
+      </main>
+    );
+  }
+
+  const selected = ui.screens.find((sc) => sc.id === selectedId) ?? ui.screens[0];
+  const isBottomTab = ui.navigation.includes("Bottom") || ui.navigation.includes("혼합");
+
+  const handleModify = () => {
+    if (instruction.trim().length === 0) return;
+    pendingInstructionRef.current = instruction.trim();
+    setInstruction("");
+    setStatus("loading");
+    window.scrollTo(0, 0);
+  };
+
+  return (
+    <main className="flex flex-1 flex-col px-5 pt-4 pb-[140px] animate-fadeIn md:items-center md:pt-8 md:pb-12">
+      <div className="flex w-full flex-col gap-4 md:max-w-[1080px]">
+        <div>
+          <span className="text-[12px] font-semibold text-primary">AI UI 목업</span>
+          <h1 className="mt-1 text-[22px] font-bold text-ink-title">{prd.title}</h1>
+          <p className="mt-1 text-[13px] text-ink-body">
+            스타일: {ui.theme || "-"} · 내비게이션: {ui.navigation || "-"}
+          </p>
+        </div>
+
+        {ui.flow.length > 0 && (
+          <div className="flex flex-wrap items-center gap-y-1.5 rounded-2xl border border-[#ECEEF2] bg-white px-4 py-3">
+            {ui.flow.map((f, index) => (
+              <span key={f + index} className="flex items-center text-[12px] font-medium text-ink-title">
+                {f}
+                {index < ui.flow.length - 1 && <span className="mx-1.5 text-primary" aria-hidden="true">→</span>}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="flex flex-col gap-4 md:flex-row md:items-start">
+          {/* 왼쪽: 화면 목록 */}
+          <nav className="shrink-0 md:w-[180px]" aria-label="화면 목록">
+            <ul className="flex gap-2 overflow-x-auto pb-1 md:flex-col md:overflow-visible">
+              {ui.screens.map((screen) => {
+                const isActive = screen.id === selected.id;
+                return (
+                  <li key={screen.id} className="shrink-0 md:shrink">
+                    <button
+                      onClick={() => setSelectedId(screen.id)}
+                      className={
+                        "w-full whitespace-nowrap rounded-xl px-4 py-2.5 text-left text-[13px] transition-colors duration-200 md:whitespace-normal " +
+                        (isActive
+                          ? "bg-primary/10 font-semibold text-primary"
+                          : "bg-white font-medium text-ink-body border border-[#ECEEF2] hover:border-[#D1D5DB]")
+                      }
+                    >
+                      {screen.name}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+
+          {/* 가운데: 미리보기 (폰 프레임) */}
+          <div className="flex flex-1 justify-center">
+            <div className="w-full max-w-[300px] overflow-hidden rounded-[28px] border-[6px] border-[#111827] bg-white shadow-[0_16px_40px_rgba(15,23,42,0.18)]">
+              <div className="flex h-8 items-center justify-center border-b border-[#ECEEF2] bg-white">
+                <span className="truncate px-4 text-[11px] font-bold text-ink-title">{selected.name}</span>
+              </div>
+              <div className="flex min-h-[380px] flex-col gap-2.5 bg-[#F8FAFC] p-3">
+                {selected.components.length === 0 && (
+                  <p className="py-10 text-center text-[11px] text-ink-body">구성 컴포넌트가 없습니다.</p>
+                )}
+                {selected.components.map((component, index) => (
+                  <MockBlock key={component + index} label={component} />
+                ))}
+              </div>
+              {isBottomTab && (
+                <div className="flex items-center justify-around border-t border-[#ECEEF2] bg-white py-1.5">
+                  {ui.screens.slice(0, 4).map((screen) => (
+                    <button key={screen.id} onClick={() => setSelectedId(screen.id)} className="flex flex-col items-center gap-0.5 px-1">
+                      <span className={"h-4 w-4 rounded " + (screen.id === selected.id ? "bg-primary" : "bg-[#D1D5DB]")} aria-hidden="true" />
+                      <span className={"max-w-[52px] truncate text-[8.5px] " + (screen.id === selected.id ? "font-semibold text-primary" : "text-[#9CA3AF]")}>{screen.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 오른쪽: AI 설명 + 수정 요청 */}
+          <div className="flex flex-col gap-3 md:w-[300px] md:shrink-0">
+            <section className="rounded-2xl border border-[#ECEEF2] bg-white p-4">
+              <h2 className="text-[13px] font-bold text-ink-title">AI 설명</h2>
+              <p className="mt-1.5 text-[13px] leading-relaxed text-ink-body">{selected.description || "-"}</p>
+              {selected.components.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {selected.components.map((component, index) => (
+                    <span key={component + index} className="rounded-badge bg-[#F3F4F6] px-2 py-0.5 text-[10.5px] font-medium text-ink-body">
+                      {component}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-2xl border border-primary/25 bg-primary/5 p-4">
+              <h2 className="flex items-center gap-1.5 text-[13px] font-bold text-primary">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+                  <path d="M12 2l1.9 5.5L19.5 9l-5.6 1.5L12 16l-1.9-5.5L4.5 9l5.6-1.5L12 2z" />
+                </svg>
+                AI로 수정하기
+              </h2>
+              <textarea
+                value={instruction}
+                onChange={(e) => setInstruction(e.target.value)}
+                placeholder="예: 홈에 차트 추가 / 검색창 제거 / 채팅 화면 추가 / 토스 느낌으로"
+                className="mt-2 min-h-[80px] w-full resize-none rounded-xl border border-[#E5E8EB] bg-white px-3 py-2.5 text-base leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <button
+                onClick={handleModify}
+                disabled={instruction.trim().length === 0}
+                className="mt-2 flex h-[42px] w-full items-center justify-center rounded-xl bg-primary text-[13px] font-semibold text-white transition-all duration-200 enabled:hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                AI 수정 요청
+              </button>
+            </section>
+
+            <button
+              onClick={() => navigate("/project/summary")}
+              className="flex h-[44px] w-full items-center justify-center rounded-xl border border-[#E5E8EB] bg-white text-[13px] font-semibold text-ink-body transition-colors duration-200 hover:border-[#D1D5DB] hover:text-ink-title"
+            >
+              기획서로 돌아가기
+            </button>
+          </div>
+        </div>
       </div>
     </main>
   );
@@ -1669,6 +2187,7 @@ export default function App() {
           <Route path="/project/create" element={<ProjectCreatePage />} />
           <Route path="/project/interview" element={<InterviewPage />} />
           <Route path="/project/summary" element={<SummaryPage />} />
+          <Route path="/project/mockup" element={<MockupPage />} />
           <Route path="/project/:projectId" element={<ProjectDetailPage />} />
           <Route path="/projects" element={<PlaceholderPage title="프로젝트 목록" description="프로젝트 목록 화면을 준비 중입니다." />} />
           <Route path="/todo" element={<PlaceholderPage title="오늘 할 일" description="할 일 화면을 준비 중입니다." />} />

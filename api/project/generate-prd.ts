@@ -17,6 +17,8 @@ interface PRDAnswers {
 interface PRDRequestBody {
   idea?: string;
   answers?: PRDAnswers;
+  instruction?: string;
+  currentPrd?: Record<string, unknown>;
 }
 
 interface ApiRequest {
@@ -110,12 +112,14 @@ JSON 형식:
 - 모든 텍스트는 완전하고 올바른 한국어로 작성하세요. 깨진 문자, 이상한 기호, 오타가 절대 없어야 합니다.
 - 기술명은 반드시 정확한 공식 표기를 사용하세요. 예: React, React Native, Next.js, Express.js, Node.js, PostgreSQL, MySQL, MongoDB, Supabase, Firebase, Redis, AWS S3, Vercel, Docker. 임의로 줄이거나 변형하지 마세요.
 - 외래어는 관례적 한글 표기(프리미엄, 커뮤니티, 타임라인 등)를 정확히 쓰세요.
+- currentPrd와 instruction이 함께 주어지면, 기존 기획서를 유지하면서 instruction 요청사항만 반영해 전체 기획서 JSON을 다시 출력하세요.
 - 불법이거나 피해를 유발하는 서비스는 기획서를 작성하지 말고 title에 "제작 불가"라고 쓰세요.`;
 
 // 깨진 문자(�), 제어 문자 제거
 function cleanText(value: string): string {
   return value
     .replace(/\uFFFD/g, "")
+    // eslint-disable-next-line no-control-regex -- 제어 문자 제거가 목적인 정제 로직
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
@@ -140,7 +144,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return;
   }
 
-  const { idea = "", answers = {} } = req.body ?? {};
+  const { idea = "", answers = {}, instruction, currentPrd } = req.body ?? {};
 
   if (!idea && !answers.targetUser && !answers.coreFeatures) {
     res.status(400).json({ success: false, error: "idea or answers required" });
@@ -171,7 +175,17 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         max_tokens: 6000,
         temperature: 0.4,  // 표기 오류를 줄이기 위해 낮은 온도 사용
         system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: JSON.stringify({ idea, answers }) }],
+        messages: [
+          {
+            role: "user",
+            content: JSON.stringify({
+              idea,
+              answers,
+              currentPrd: currentPrd ?? null,
+              instruction: instruction ? cleanText(instruction) : null,
+            }),
+          },
+        ],
       }),
     });
 
