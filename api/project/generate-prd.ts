@@ -106,6 +106,7 @@ JSON 형식:
 - 결제가 "필요 없습니다"면 결제 관련 기능/API/DB를 넣지 마세요.
 - 로그인이 "필요 없습니다"면 회원 관련 기능을 최소화하세요.
 - 플랫폼 답변에 맞는 기술스택을 추천하세요.
+- 각 항목은 구체적이되 간결하게 작성하세요. 항목당 설명은 1문장이면 충분합니다.
 - 불법이거나 피해를 유발하는 서비스는 기획서를 작성하지 말고 title에 "제작 불가"라고 쓰세요.`;
 
 function toStringArray(value: unknown, max = 20): string[] {
@@ -147,7 +148,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 4000,
+        max_tokens: 3000,
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: JSON.stringify({ idea, answers }) }],
       }),
