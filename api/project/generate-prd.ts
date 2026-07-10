@@ -147,7 +147,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
+        model: "claude-haiku-4-5",  // 기획서는 60초 제한 안에 생성돼야 하므로 빠른 모델 사용
         max_tokens: 6000,
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: JSON.stringify({ idea, answers }) }],
