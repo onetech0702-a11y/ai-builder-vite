@@ -20,6 +20,8 @@ interface RecommendRequestBody {
   question?: string;
   options?: string[];
   answers?: RecommendAnswers;
+  mode?: "brand-names" | "idea-suggestions";
+  discovery?: Record<string, string>;
 }
 
 interface ApiRequest {
@@ -105,7 +107,54 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return;
   }
 
-  const { idea = "", currentStep = 1, question = "", options, answers = {} } = req.body ?? {};
+  const { idea = "", currentStep = 1, question = "", options, answers = {}, mode, discovery } = req.body ?? {};
+
+  // 특수 모드: 브랜드명 추천 / 아이디어 추천
+  if (mode === "brand-names" || mode === "idea-suggestions") {
+    const apiKeySpecial = process.env.ANTHROPIC_API_KEY;
+    if (!apiKeySpecial) {
+      res.status(500).json({ success: false, error: "ANTHROPIC_API_KEY is not configured" });
+      return;
+    }
+    const isBrand = mode === "brand-names";
+    const systemSpecial = isBrand
+      ? `당신은 브랜드 네이밍 전문가입니다. 주어진 서비스 아이디어에 어울리는 브랜드명 5개를 제안하세요. 짧고 기억하기 쉬운 이름(영문 또는 한글)으로 만드세요. 반드시 JSON으로만 응답하세요: {"names":["이름1","이름2","이름3","이름4","이름5"]}`
+      : `당신은 IT 서비스 기획자입니다. 사용자의 관심사와 답변을 기반으로 만들 만한 웹/앱 서비스 아이디어 5개를 제안하세요. 각 아이디어는 15자 이내의 짧은 서비스명 형태(예: AI 식단 관리, 예약관리 시스템)로 작성하세요. 불법이거나 유해한 아이디어는 금지합니다. 반드시 JSON으로만 응답하세요: {"ideas":["아이디어1","아이디어2","아이디어3","아이디어4","아이디어5"]}`;
+    try {
+      const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": apiKeySpecial, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5",
+          max_tokens: 500,
+          temperature: 0.8,
+          system: systemSpecial,
+          messages: [{ role: "user", content: JSON.stringify(isBrand ? { idea } : { discovery: discovery ?? {} }) }],
+        }),
+      });
+      if (!aiResp.ok) {
+        res.status(502).json({ success: false, error: `AI API error: ${aiResp.status}` });
+        return;
+      }
+      const d = (await aiResp.json()) as { content?: { type: string; text?: string }[] };
+      const raw = (d.content ?? []).map((b) => (b.type === "text" ? b.text ?? "" : "")).join("").replace(/```json|```/g, "").trim();
+      const fb = raw.indexOf("{");
+      const lb = raw.lastIndexOf("}");
+      const parsedSpecial = JSON.parse(raw.slice(fb, lb + 1)) as { names?: unknown; ideas?: unknown };
+      const items = (isBrand ? parsedSpecial.names : parsedSpecial.ideas) as unknown;
+      const list = Array.isArray(items)
+        ? items.filter((v): v is string => typeof v === "string").map(cleanText).filter((v) => v.length > 0).slice(0, 5)
+        : [];
+      if (list.length === 0) {
+        res.status(502).json({ success: false, error: "AI가 추천을 생성하지 못했습니다." });
+        return;
+      }
+      res.status(200).json(isBrand ? { success: true, names: list } : { success: true, ideas: list });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error instanceof Error ? error.message : "Unknown error" });
+    }
+    return;
+  }
 
   if (!question) {
     res.status(400).json({ success: false, error: "question is required" });
