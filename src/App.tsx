@@ -7,10 +7,24 @@ import {
   useLocation,
   useParams,
 } from "react-router-dom";
+import { clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
+import { motion, AnimatePresence } from "framer-motion";
+import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
+import { CSS as DndCSS } from "@dnd-kit/utilities";
+import {
+  Home as HomeIcon, Search as SearchIcon, User as UserIcon, Bell, Settings as SettingsIcon, LogIn, UserPlus,
+  Plus, Pencil, Undo2, Redo2, GripVertical, Trash2, Sparkles, ChevronDown, X as XIcon, Check, Lightbulb,
+  Minus, LayoutGrid, FileText, Heart, BarChart3, ShieldCheck, MessageCircle, Calendar as CalendarIcon, Smartphone, Wand2,
+} from "lucide-react";
+
+function cn(...inputs: (string | false | null | undefined)[]) {
+  return twMerge(clsx(inputs));
+}
 import logo from "./assets/onetech-logo.png";
-import HeroCard from "./components/HeroCard";
 import ProgressBar from "./components/ProgressBar";
-import { RECENT_PROJECTS, Project, TODAY_TASKS, TaskItem, TaskStatus } from "./data/mockData";
+import { RECENT_PROJECTS, Project } from "./data/mockData";
 
 /* ---------------------------------------------
  * Phase 1-2: Project Create(프로젝트 생성) 기능
@@ -116,75 +130,8 @@ interface NavRoute {
 const NAV_ROUTES: NavRoute[] = [
   { id: "home", label: "홈", path: "/" },
   { id: "projects", label: "프로젝트", path: "/projects" },
-  { id: "tasks", label: "할 일", path: "/todo" },
   { id: "settings", label: "설정", path: "/setting" },
 ];
-
-/* ---------- 아이디어 입력 카드 ---------- */
-
-const PLACEHOLDER_EXAMPLES = [
-  "AI 주식 앱을 만들고 싶어요",
-  "예약 관리 시스템",
-  "쇼핑몰 서비스",
-  "운동 기록 앱",
-  "가계부 앱",
-];
-
-const PLACEHOLDER_INTERVAL_MS = 2400;
-
-function IdeaInputSection({ onStartWithAI }: { onStartWithAI: (idea: string) => void }) {
-  const [placeholderIndex, setPlaceholderIndex] = useState(0);
-  const [idea, setIdea] = useState(() => localStorage.getItem(IDEA_STORAGE_KEY) ?? "");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  const isEmpty = idea.trim().length === 0;
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setPlaceholderIndex((prev) => (prev + 1) % PLACEHOLDER_EXAMPLES.length);
-    }, PLACEHOLDER_INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Auto Resize: 내용에 맞춰 높이 자동 조절 (최소 100px)
-  useEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.max(el.scrollHeight, 100)}px`;
-  }, [idea]);
-
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setIdea(e.target.value);
-    localStorage.setItem(IDEA_STORAGE_KEY, e.target.value);
-  };
-
-  return (
-    <section className="flex flex-1 flex-col border-t border-[#ECEEF2] bg-white p-6 md:p-7 animate-slideUp">
-      <h2 className="text-[17px] font-bold text-ink-title">무엇을 만들고 싶나요?</h2>
-
-      <textarea
-        ref={textareaRef}
-        value={idea}
-        onChange={handleChange}
-        rows={1}
-        placeholder={`예: ${PLACEHOLDER_EXAMPLES[placeholderIndex]}`}
-        className="mt-3 min-h-[100px] w-full resize-none overflow-hidden rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-base text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
-      />
-
-      <button
-        onClick={() => onStartWithAI(idea.trim())}
-        disabled={isEmpty}
-        className="mt-3 flex h-[50px] w-full items-center justify-center gap-2 rounded-2xl bg-primary text-[14px] font-semibold text-white transition-all duration-200 enabled:hover:scale-[1.02] enabled:active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-          <path d="M12 2l1.9 5.5L19.5 9l-5.6 1.5L12 16l-1.9-5.5L4.5 9l5.6-1.5L12 2z" />
-        </svg>
-        AI와 함께 시작하기
-      </button>
-    </section>
-  );
-}
 
 /* ---------- 최근 프로젝트 (카드 클릭 → 상세 이동) ---------- */
 
@@ -223,215 +170,290 @@ function ProjectIcon({ type }: { type: Project["icon"] }) {
   }
 }
 
-function ProjectListItem({ project, onSelect }: { project: Project; onSelect: (id: string) => void }) {
+/* ---------- 홈: 최근 서비스 카드 (실제 프로젝트) ---------- */
+
+const HOME_EXAMPLES = ["AI 식단 관리", "예약 관리", "쇼핑몰", "AI 챗봇", "주식 앱", "커뮤니티"];
+
+const SERVICE_STAGES = ["AI 인터뷰", "AI 기획", "디자인 미리보기", "코드 생성", "테스트", "배포"];
+
+function stageIndexOf(step: string): number {
+  if (step.includes("design-done") || step.includes("code")) return 3;
+  if (step.includes("ui") || step.includes("design")) return 2;
+  if (step.includes("planning") || step.includes("prd") || step.includes("summary")) return 1;
+  return 0;
+}
+
+interface UserProjectEntry {
+  id: string;
+  idea?: string;
+  title?: string;
+  step?: string;
+  progress?: number;
+  updatedAt?: string;
+}
+
+function loadRecentUserProjects(): UserProjectEntry[] {
+  try {
+    const raw = localStorage.getItem(PROJECTS_LIST_KEY);
+    const list = raw ? (JSON.parse(raw) as UserProjectEntry[]) : [];
+    if (!Array.isArray(list)) return [];
+    return list
+      .filter((p) => typeof p.id === "string")
+      .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
+      .slice(0, 3);
+  } catch {
+    return [];
+  }
+}
+
+function continueRoute(step: string): string {
+  if (step.includes("ui") || step.includes("design")) return "/project/mockup";
+  if (step.includes("planning") || step.includes("prd") || step.includes("summary")) return "/project/summary";
+  return "/project/interview";
+}
+
+function openUserProject(project: UserProjectEntry, navigate: (path: string) => void) {
+  try {
+    localStorage.setItem(CURRENT_PROJECT_KEY, JSON.stringify(project));
+  } catch {
+    // 저장 실패 시에도 이동은 진행
+  }
+  navigate(continueRoute(project.step ?? ""));
+}
+
+function ServiceCard({ project, showStages, navigate }: { project: UserProjectEntry; showStages: boolean; navigate: (p: string) => void }) {
+  const name = (project.title && project.title.trim()) || (project.idea && project.idea.trim()) || "이름 없는 서비스";
+  const progress = Math.min(100, Math.max(0, project.progress ?? 10));
+  const stageIndex = stageIndexOf(project.step ?? "");
+  const minutesLeft = Math.max(2, Math.round(((100 - progress) / 100) * 20));
+
   return (
-    <li
-      onClick={() => onSelect(project.id)}
-      className="flex cursor-pointer items-start gap-3 px-4 py-3.5 transition-colors duration-150 hover:bg-[#F8FAFC] active:bg-[#F3F4F6]"
+    <motion.article
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, ease: "easeOut" }}
+      className="rounded-[20px] border border-[#ECEEF2] bg-white p-5 shadow-[0_4px_16px_rgba(15,23,42,0.04)]"
     >
-      <div
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl shadow-[0_6px_14px_-4px_rgba(79,107,255,0.4)]"
-        style={{ background: `linear-gradient(135deg, ${project.colorFrom}, ${project.colorTo})` }}
-      >
-        <ProjectIcon type={project.icon} />
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-[14px] font-semibold text-ink-title truncate">{project.name}</h3>
-          <button
-            aria-label="더보기"
-            onClick={(e) => e.stopPropagation()}
-            className="shrink-0 flex h-6 w-6 items-center justify-center rounded-full text-ink-body hover:bg-[#F3F4F6]"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <circle cx="5" cy="12" r="1.6" />
-              <circle cx="12" cy="12" r="1.6" />
-              <circle cx="19" cy="12" r="1.6" />
-            </svg>
-          </button>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="truncate text-[16px] font-bold text-ink-title">{name}</h3>
+          <p className="mt-0.5 text-[12.5px] text-ink-body">
+            현재 <span className="font-semibold text-primary">{SERVICE_STAGES[stageIndex]}</span> · 약 {minutesLeft}분 남음
+          </p>
         </div>
-        <p className="mt-0.5 text-[11px] text-ink-body">마지막 수정 {project.updatedAt}</p>
-
-        <div className="mt-2 flex items-center gap-2">
-          <div className="flex-1">
-            <ProgressBar progress={project.progress} />
-          </div>
-          <span className="shrink-0 text-[11px] font-bold text-primary">{project.progress}%</span>
-          <span className="shrink-0 rounded-badge bg-[#F3F4F6] px-2 py-0.5 text-[10px] font-medium text-ink-body">
-            {project.phase}
-          </span>
-        </div>
-      </div>
-    </li>
-  );
-}
-
-function RecentProjectsSection({ onViewAll, onSelect }: { onViewAll: () => void; onSelect: (id: string) => void }) {
-  return (
-    <section className="animate-fadeIn min-w-0">
-      <div className="flex items-center justify-between">
-        <h2 className="text-[18px] font-bold text-ink-title">최근 프로젝트</h2>
-        <button onClick={onViewAll} className="flex items-center gap-0.5 text-[13px] font-medium text-primary">
-          전체 보기
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M9 6l6 6-6 6" />
-          </svg>
-        </button>
+        <span className="shrink-0 text-[14px] font-bold text-primary">{progress}%</span>
       </div>
 
-      <ul className="mt-3.5 divide-y divide-[#ECEEF2] overflow-hidden rounded-[24px] border border-[#ECEEF2] bg-white">
-        {RECENT_PROJECTS.slice(0, 3).map((project) => (
-          <ProjectListItem key={project.id} project={project} onSelect={onSelect} />
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-/* ---------- 오늘 할 일 (시간 표시 없음) ---------- */
-
-const TASK_STATUS_MAP: Record<TaskStatus, { label: string; bg: string; text: string }> = {
-  done: { label: "완료", bg: "#DCFCE7", text: "#16A34A" },
-  inProgress: { label: "진행중", bg: "#DBEAFE", text: "#2563EB" },
-  pending: { label: "대기", bg: "#F3F4F6", text: "#6B7280" },
-};
-
-function TaskStatusBadge({ status }: { status: TaskStatus }) {
-  const s = TASK_STATUS_MAP[status];
-  return (
-    <span className="shrink-0 rounded-badge px-2.5 py-1 text-[11px] font-semibold" style={{ background: s.bg, color: s.text }}>
-      {s.label}
-    </span>
-  );
-}
-
-function TaskRow({ task, onToggle }: { task: TaskItem; onToggle: (id: string) => void }) {
-  return (
-    <li className="flex min-h-[48px] items-center gap-3 px-4 py-2 transition-colors duration-200 hover:bg-[#FAFBFC] lg:min-h-[39px] lg:py-1.5">
-      <button
-        onClick={() => onToggle(task.id)}
-        aria-label="할 일 완료 처리"
-        className={
-          "flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md border transition-colors " +
-          (task.status === "done" ? "bg-primary border-primary" : "bg-white border-[#D1D5DB]")
-        }
-      >
-        {task.status === "done" && (
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M5 13l4 4L19 7" />
-          </svg>
-        )}
-      </button>
-
-      <span
-        className={
-          "min-w-0 flex-1 truncate text-[14px] " +
-          (task.status === "done" ? "text-ink-body" : "text-ink-title font-medium")
-        }
-      >
-        {task.title}
-      </span>
-
-      <TaskStatusBadge status={task.status} />
-
-      <button
-        aria-label="더보기"
-        className="shrink-0 flex h-7 w-7 items-center justify-center rounded-full text-ink-body hover:bg-[#ECEEF2]"
-      >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <circle cx="5" cy="12" r="1.6" />
-          <circle cx="12" cy="12" r="1.6" />
-          <circle cx="19" cy="12" r="1.6" />
-        </svg>
-      </button>
-    </li>
-  );
-}
-
-function TodayTasksSection({ onViewAll }: { onViewAll: () => void }) {
-  const [tasks, setTasks] = useState(TODAY_TASKS);
-
-  const handleToggle = (id: string) => {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, status: t.status === "done" ? "pending" : "done" } : t))
-    );
-  };
-
-  const doneCount = tasks.filter((t) => t.status === "done").length;
-  const totalCount = tasks.length;
-  const percent = totalCount === 0 ? 0 : Math.round((doneCount / totalCount) * 100);
-
-  return (
-    <section className="animate-fadeIn flex flex-col md:min-h-0 md:flex-1">
-      <div className="flex shrink-0 items-center justify-between">
-        <h2 className="text-[18px] font-bold text-ink-title">오늘 할 일</h2>
-        <button onClick={onViewAll} className="flex items-center gap-0.5 text-[13px] font-medium text-primary">
-          전체 보기
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M9 6l6 6-6 6" />
-          </svg>
-        </button>
+      <div className="mt-3">
+        <ProgressBar progress={progress} />
       </div>
 
-      <div className="mt-3.5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-[24px] border border-[#ECEEF2] bg-white md:min-h-0">
-        <div className="shrink-0 border-b border-[#ECEEF2] px-4 py-3">
-          <div className="flex items-center justify-between text-[12px] text-ink-body">
-            <span>
-              {doneCount}/{totalCount} 완료
-            </span>
-            <span className="font-bold text-primary">{percent}%</span>
-          </div>
-          <div className="mt-1.5">
-            <ProgressBar progress={percent} />
-          </div>
-        </div>
-
-        <ul className="min-h-0 flex-1 divide-y divide-[#ECEEF2] overflow-y-auto">
-          {tasks.map((task) => (
-            <TaskRow key={task.id} task={task} onToggle={handleToggle} />
+      {showStages && (
+        <ul className="mt-3.5 flex flex-wrap gap-x-3 gap-y-1.5">
+          {SERVICE_STAGES.map((stage, index) => (
+            <li key={stage} className="flex items-center gap-1 text-[11.5px]">
+              {index < stageIndex ? (
+                <Check className="h-3 w-3 text-[#16A34A]" />
+              ) : index === stageIndex ? (
+                <span className="text-[11px]" aria-hidden="true">⏳</span>
+              ) : (
+                <span className="h-2.5 w-2.5 rounded-[3px] border border-[#D1D5DB]" aria-hidden="true" />
+              )}
+              <span className={index < stageIndex ? "text-[#16A34A]" : index === stageIndex ? "font-semibold text-ink-title" : "text-ink-body"}>{stage}</span>
+            </li>
           ))}
         </ul>
-      </div>
-    </section>
+      )}
+
+      <button
+        onClick={() => openUserProject(project, navigate)}
+        className="mt-4 flex h-[42px] w-full items-center justify-center rounded-xl bg-primary/10 text-[13.5px] font-semibold text-primary transition-colors hover:bg-primary/15"
+      >
+        계속 만들기
+      </button>
+    </motion.article>
   );
 }
 
-/* ---------- 페이지: Home ---------- */
+/* ---------- 페이지: 홈 ---------- */
 
 function HomePage() {
   const navigate = useNavigate();
+  const [idea, setIdea] = useState<string>(() => {
+    try {
+      return localStorage.getItem(IDEA_STORAGE_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const [recentProjects] = useState<UserProjectEntry[]>(() => loadRecentUserProjects());
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const handleCreateProject = () => navigate("/project/create");
-  const handleStartWithAI = (idea: string) => {
-    saveUserProject(createUserProject(idea));
+  const persistDraft = (value: string) => {
+    setIdea(value);
+    try {
+      localStorage.setItem(IDEA_STORAGE_KEY, value);
+    } catch {
+      // 무시
+    }
+  };
+
+  const handleStart = () => {
+    if (idea.trim().length === 0) return;
+    saveUserProject(createUserProject(idea.trim()));
+    try {
+      localStorage.removeItem(IDEA_STORAGE_KEY);
+    } catch {
+      // 무시
+    }
     navigate("/project/interview");
   };
-  const handleSelectProject = (id: string) => navigate(`/project/${id}`);
-  const handleViewAll = () => navigate("/projects");
+
+  // 아이디어가 없는 사용자: AI가 아이디어를 함께 찾는 인터뷰로 시작
+  const handleUnknown = () => {
+    saveUserProject(createUserProject(""));
+    navigate("/project/interview");
+  };
+
+  const latest = recentProjects[0];
+  const latestStage = latest ? SERVICE_STAGES[stageIndexOf(latest.step ?? "")] : "";
 
   return (
-    <main className="flex flex-1 flex-col gap-3 px-5 py-3 pb-[90px] md:h-[calc(100dvh-5rem)] md:min-h-0 md:flex-row md:gap-6 md:overflow-hidden md:px-8 md:py-5 md:pb-5 lg:gap-8 lg:px-10">
-      {/* 좌측 65%(Desktop): Hero + 입력카드를 하나의 연결된 카드로 */}
-      <div className="flex shrink-0 flex-col md:min-h-0 md:w-[58%] md:shrink-0 lg:w-[65%]">
-        <div className="flex flex-1 flex-col overflow-hidden rounded-[28px] border border-[#ECEEF2] shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
-          <HeroCard onCreateProject={handleCreateProject} />
-          <IdeaInputSection onStartWithAI={handleStartWithAI} />
-        </div>
-      </div>
+    <main className="flex flex-1 flex-col items-center px-5 py-6 pb-[110px] md:px-8 md:py-10 md:pb-16">
+      <div className="flex w-full flex-col gap-8 md:max-w-[640px]">
+        {/* 메인 문구 + 입력 */}
+        <motion.section
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, ease: "easeOut" }}
+          className="pt-4 text-center md:pt-10"
+        >
+          <h1 className="text-[28px] font-bold leading-snug text-ink-title md:text-[34px]">
+            아이디어 하나면
+            <br className="md:hidden" /> 충분합니다.
+          </h1>
+          <p className="mt-3 text-[14.5px] leading-relaxed text-ink-body md:text-[15.5px]">
+            AI와 대화만 하면
+            <br className="md:hidden" /> 기획부터 디자인, 개발, 테스트, 배포까지 함께합니다.
+          </p>
 
-      {/* 우측 35%(Desktop): 최근 프로젝트 + 오늘 할 일 */}
-      <div className="flex flex-col gap-3 md:min-h-0 md:w-[42%] md:flex-1 lg:w-[35%]">
-        <div className="flex min-h-0 flex-1 flex-col md:min-h-0">
-          <RecentProjectsSection onViewAll={handleViewAll} onSelect={handleSelectProject} />
-        </div>
-        <div className="flex min-h-0 flex-1 flex-col md:min-h-0">
-          <TodayTasksSection onViewAll={() => navigate("/todo")} />
-        </div>
+          <div className="mt-7 rounded-[24px] border border-[#ECEEF2] bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:p-5">
+            <textarea
+              ref={inputRef}
+              value={idea}
+              onChange={(e) => persistDraft(e.target.value)}
+              placeholder="무엇을 만들고 싶으신가요?"
+              rows={2}
+              className="min-h-[64px] w-full resize-none rounded-2xl bg-[#F8FAFC] px-4 py-3.5 text-base leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            <button
+              onClick={handleStart}
+              disabled={idea.trim().length === 0}
+              className="mt-3 flex h-[56px] w-full items-center justify-center gap-2 rounded-2xl bg-primary text-[16px] font-bold text-white shadow-[0_8px_20px_-4px_rgba(79,107,255,0.5)] transition-all duration-200 enabled:hover:scale-[1.02] enabled:active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Sparkles className="h-4.5 w-4.5 h-[18px] w-[18px]" />
+              AI와 시작하기
+            </button>
+            <button
+              onClick={handleUnknown}
+              className="mt-2.5 text-[13px] font-medium text-ink-body underline-offset-2 transition-colors hover:text-primary hover:underline"
+            >
+              잘 모르겠어요
+            </button>
+
+            <div className="mt-4 flex flex-wrap justify-center gap-1.5">
+              {HOME_EXAMPLES.map((example) => (
+                <button
+                  key={example}
+                  onClick={() => {
+                    persistDraft(example);
+                    inputRef.current?.focus();
+                  }}
+                  className="rounded-badge border border-[#E5E8EB] bg-white px-3 py-1.5 text-[12.5px] font-medium text-ink-body transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                >
+                  {example}
+                </button>
+              ))}
+            </div>
+          </div>
+        </motion.section>
+
+        {/* AI 추천 */}
+        {latest && (
+          <motion.section
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.1, ease: "easeOut" }}
+            className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-primary/25 bg-primary/5 px-5 py-4"
+          >
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-primary shadow-sm">
+                <Sparkles className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[12px] font-bold text-primary">AI가 추천합니다</p>
+                <p className="truncate text-[13.5px] font-medium text-ink-title">
+                  지난번 작업을 이어서 <span className="font-bold">{latestStage}</span> 단계를 진행해보세요.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => openUserProject(latest, navigate)}
+              className="h-9 shrink-0 rounded-xl bg-primary px-4 text-[13px] font-semibold text-white transition-transform hover:scale-[1.02]"
+            >
+              이어서 만들기
+            </button>
+          </motion.section>
+        )}
+
+        {/* 최근 작업 중인 서비스 */}
+        {recentProjects.length > 0 && (
+          <section>
+            <h2 className="px-1 text-[16px] font-bold text-ink-title">최근 작업 중인 서비스</h2>
+            <div className="mt-3 flex flex-col gap-3">
+              {recentProjects.map((project, index) => (
+                <ServiceCard key={project.id} project={project} showStages={index === 0} navigate={navigate} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* OneTech Promise */}
+        <motion.section
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.15, ease: "easeOut" }}
+          className="rounded-[24px] border border-[#ECEEF2] bg-white p-6 text-center shadow-[0_4px_16px_rgba(15,23,42,0.04)]"
+        >
+          <ul className="inline-flex flex-col items-start gap-2 text-left">
+            {["코딩 몰라도 됩니다.", "디자인 몰라도 됩니다.", "배포 몰라도 됩니다.", "AI와 대화만 하세요."].map((line) => (
+              <li key={line} className="flex items-center gap-2 text-[14.5px] font-medium text-ink-title">
+                <Check className="h-4 w-4 shrink-0 text-[#16A34A]" />
+                {line}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-5 text-[15px] font-bold text-ink-title">
+            10분 후, <span className="text-primary">당신의 서비스</span>를 직접 실행할 수 있습니다.
+          </p>
+        </motion.section>
+
+        {/* 서비스 제작 과정 */}
+        <section className="pb-2 text-center">
+          <div className="flex flex-wrap items-center justify-center gap-y-1.5">
+            {["아이디어", "AI 인터뷰", "AI 기획", "실행형 프로토타입", "수정", "코드 생성", "배포"].map((step, index, arr) => (
+              <span key={step} className="flex items-center text-[12px] font-medium text-ink-body">
+                {step}
+                {index < arr.length - 1 && <span className="mx-1.5 text-primary" aria-hidden="true">→</span>}
+              </span>
+            ))}
+          </div>
+        </section>
       </div>
     </main>
   );
 }
+
 
 /* ---------- 공통: 뒤로가기 버튼 ---------- */
 
@@ -662,6 +684,34 @@ const INTERVIEW_STEPS: InterviewStepDef[] = [
 ];
 
 const INTERVIEW_PROGRESS = [16, 33, 50, 66, 83, 100];
+
+/* ---------- 브랜드명 추천 / 아이디어 발굴 API ---------- */
+
+async function fetchBrandNames(idea: string): Promise<string[]> {
+  const response = await fetch("/api/interview/recommend", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "brand-names", idea }),
+  });
+  if (!response.ok) throw new Error(`API error: ${response.status}`);
+  const data = (await response.json()) as { success: boolean; names?: string[]; error?: string };
+  if (!data.success || !data.names || data.names.length === 0) throw new Error(data.error ?? "브랜드명 추천 실패");
+  return data.names;
+}
+
+async function fetchIdeaSuggestions(discovery: Record<string, string>): Promise<string[]> {
+  const response = await fetch("/api/interview/recommend", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "idea-discovery", discovery }),
+  });
+  if (!response.ok) throw new Error(`API error: ${response.status}`);
+  const data = (await response.json()) as { success: boolean; ideas?: string[]; error?: string };
+  if (!data.success || !data.ideas || data.ideas.length === 0) throw new Error(data.error ?? "아이디어 추천 실패");
+  return data.ideas;
+}
+
+const FALLBACK_IDEAS = ["AI 식단 관리 앱", "예약관리 시스템", "AI 운동 기록 앱", "AI 가계부", "AI 독서 관리 앱"];
 
 /* ---------- Mock AI Recommendation Engine ----------
  * idea 키워드 + 현재 step을 기반으로 추천을 생성한다.
@@ -912,9 +962,87 @@ function loadInterviewState(): { step: number; answers: InterviewAnswers } {
   return { step, answers: { ...EMPTY_ANSWERS, ...savedAnswers } };
 }
 
+type InterviewPhase = "discover" | "brand" | "questions";
+
+const DISCOVERY_STEPS: { key: string; question: string; type: "choice" | "text"; options?: string[]; placeholder?: string }[] = [
+  { key: "category", question: "어떤 분야에 관심이 있으신가요?", type: "choice", options: ["음식", "운동", "여행", "금융", "병원", "쇼핑", "교육", "생산성", "AI", "기타"] },
+  { key: "who", question: "누가 사용할 서비스인가요?", type: "choice", options: ["개인", "사장님", "회사", "학생", "모두"] },
+  { key: "problem", question: "어떤 문제를 해결하고 싶으신가요?", type: "text", placeholder: "예: 매번 손으로 예약을 관리하는 게 힘들어요" },
+  { key: "revenue", question: "수익을 만들고 싶으신가요?", type: "choice", options: ["예", "아니오"] },
+  { key: "platform", question: "웹과 앱 중 어디로 만들고 싶으신가요?", type: "choice", options: ["웹", "앱", "둘 다"] },
+];
+
 function InterviewPage() {
   const navigate = useNavigate();
-  const idea = loadCurrentIdea();
+  const [idea, setIdea] = useState(() => loadCurrentIdea());
+
+  // 시작 단계 결정: 아이디어 없으면 발굴 → 브랜드명 → 질문
+  const [phase, setPhase] = useState<InterviewPhase>(() => {
+    const project = loadCurrentProject();
+    const hasBrand = typeof project.brandName === "string" && (project.brandName as string).trim().length > 0;
+    const progressed = typeof project.interviewStep === "number" && (project.interviewStep as number) > 1;
+    if (loadCurrentIdea().trim().length === 0 && !progressed) return "discover";
+    if (!hasBrand && !progressed) return "brand";
+    return "questions";
+  });
+
+  // ---- 아이디어 발굴 상태 ----
+  const [dStep, setDStep] = useState(0);
+  const [dAnswers, setDAnswers] = useState<Record<string, string>>({ category: "", who: "", problem: "", revenue: "", platform: "" });
+  const [ideaOptions, setIdeaOptions] = useState<string[] | null>(null);
+  const [isDiscovering, setIsDiscovering] = useState(false);
+
+  const handleDiscoveryNext = async () => {
+    if (dStep < DISCOVERY_STEPS.length - 1) {
+      setDStep(dStep + 1);
+      window.scrollTo(0, 0);
+      return;
+    }
+    setIsDiscovering(true);
+    try {
+      setIdeaOptions(await fetchIdeaSuggestions(dAnswers));
+    } catch {
+      setIdeaOptions(FALLBACK_IDEAS);
+    } finally {
+      setIsDiscovering(false);
+    }
+  };
+
+  const handlePickIdea = (picked: string) => {
+    updateCurrentProject({ idea: picked, title: picked, ideaGenerated: true, ideaCategory: dAnswers.category });
+    setIdea(picked);
+    setPhase("brand");
+    window.scrollTo(0, 0);
+  };
+
+  // ---- 브랜드명 상태 ----
+  const [brandChoice, setBrandChoice] = useState<"direct" | "ai" | null>(null);
+  const [brandInput, setBrandInput] = useState("");
+  const [brandOptions, setBrandOptions] = useState<string[] | null>(null);
+  const [isBrandLoading, setIsBrandLoading] = useState(false);
+  const [brandError, setBrandError] = useState("");
+
+  const saveBrand = (name: string, source: "직접" | "AI") => {
+    if (name.trim().length === 0) return;
+    updateCurrentProject({ brandName: name.trim(), brandSource: source });
+    setPhase("questions");
+    window.scrollTo(0, 0);
+  };
+
+  const handleBrandAI = async () => {
+    setBrandChoice("ai");
+    setBrandError("");
+    setBrandOptions(null);
+    setIsBrandLoading(true);
+    try {
+      setBrandOptions(await fetchBrandNames(idea));
+    } catch {
+      setBrandError("AI 추천에 실패했습니다. 직접 입력해주세요.");
+      setBrandChoice("direct");
+    } finally {
+      setIsBrandLoading(false);
+    }
+  };
 
   const initial = loadInterviewState();
   const [stepIndex, setStepIndex] = useState(initial.step - 1);
@@ -1001,10 +1129,198 @@ function InterviewPage() {
     }
     if (valueToApply.trim().length === 0) return; // 거부 응답(applyValue 없음)은 적용하지 않음
 
+    // 텍스트 질문: 사용자가 쓴 내용을 절대 지우지 않고, 한 줄 띄우고 AI 추천을 덧붙임
+    if (step.type === "text") {
+      const existing = answers[step.field].trimEnd();
+      if (existing.length > 0) {
+        const bulletItems = valueToApply
+          .split(/[,、]/)
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0);
+        const bullets = (bulletItems.length > 0 ? bulletItems : [valueToApply.trim()])
+          .map((item) => `• ${item}`)
+          .join("\n");
+        valueToApply = `${existing}\n\nAI 추천\n${bullets}`;
+      }
+    }
+
     const applied = { ...answers, [step.field]: valueToApply };
     setAnswers(applied);
     persist(stepIndex + 1, applied);
   };
+
+  // ===== 아이디어 발굴 화면 =====
+  if (phase === "discover") {
+    const ds = DISCOVERY_STEPS[dStep];
+    const dv = dAnswers[ds.key];
+    const dNextDisabled = dv.trim().length === 0;
+    return (
+      <main className="flex flex-1 flex-col px-5 pt-4 pb-[140px] animate-fadeIn md:items-center md:pt-10 md:pb-12">
+        <div className="flex w-full flex-col gap-4 md:max-w-[680px]">
+          <section className="rounded-[24px] border border-[#ECEEF2] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:p-8">
+            <span className="text-[12px] font-semibold text-primary">아이디어 함께 찾기</span>
+            {isDiscovering ? (
+              <div className="flex flex-col items-center gap-3 py-12">
+                <span className="h-8 w-8 animate-spin rounded-full border-[3px] border-primary/20 border-t-primary" aria-hidden="true" />
+                <p className="text-[14px] text-ink-body">답변을 바탕으로 아이디어를 만드는 중입니다...</p>
+              </div>
+            ) : ideaOptions ? (
+              <>
+                <h1 className="mt-1 text-[20px] font-bold text-ink-title">이런 서비스는 어떠세요?</h1>
+                <p className="mt-1 text-[13px] text-ink-body">마음에 드는 아이디어를 선택하면 인터뷰를 시작합니다.</p>
+                <div className="mt-4 flex flex-col gap-2.5">
+                  {ideaOptions.map((option, index) => (
+                    <button
+                      key={option}
+                      onClick={() => handlePickIdea(option)}
+                      className="flex items-center gap-2.5 rounded-2xl border border-[#E5E8EB] bg-white px-4 py-3.5 text-left text-[15px] font-medium text-ink-title transition-colors duration-200 hover:border-primary hover:bg-primary/5"
+                    >
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[12px] font-bold text-primary">{index + 1}</span>
+                      {option}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={() => setIdeaOptions(null)} className="mt-4 text-[13px] font-medium text-ink-body hover:text-ink-title">
+                  ← 답변 다시 하기
+                </button>
+              </>
+            ) : (
+              <>
+                <h1 className="mt-1 text-[20px] font-bold leading-snug text-ink-title">{ds.question}</h1>
+                <p className="mt-1 text-[13px] text-ink-body">
+                  {dStep + 1} / {DISCOVERY_STEPS.length}
+                </p>
+                {ds.type === "choice" ? (
+                  <div className="mt-4 grid grid-cols-2 gap-2.5">
+                    {ds.options?.map((option) => (
+                      <button
+                        key={option}
+                        onClick={() => setDAnswers((prev) => ({ ...prev, [ds.key]: option }))}
+                        className={
+                          "flex items-center justify-center rounded-2xl border px-4 py-3.5 text-[15px] font-medium transition-colors duration-200 " +
+                          (dv === option ? "border-primary bg-primary/5 text-primary" : "border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]")
+                        }
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <textarea
+                    value={dv}
+                    onChange={(e) => setDAnswers((prev) => ({ ...prev, [ds.key]: e.target.value }))}
+                    placeholder={ds.placeholder}
+                    className="mt-4 min-h-[100px] w-full resize-none rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-base leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                )}
+                <div className="mt-5 flex gap-3">
+                  {dStep > 0 && (
+                    <button
+                      onClick={() => setDStep(dStep - 1)}
+                      className="flex h-[52px] flex-1 items-center justify-center rounded-2xl border border-[#E5E8EB] bg-white text-[15px] font-semibold text-ink-body transition-colors duration-200 hover:border-[#D1D5DB] hover:text-ink-title"
+                    >
+                      이전
+                    </button>
+                  )}
+                  <button
+                    onClick={() => void handleDiscoveryNext()}
+                    disabled={dNextDisabled}
+                    className="flex h-[52px] flex-[2] items-center justify-center gap-2 rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)] transition-all duration-200 enabled:hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {dStep === DISCOVERY_STEPS.length - 1 ? "아이디어 추천받기" : "다음"}
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      </main>
+    );
+  }
+
+  // ===== 브랜드명 화면 =====
+  if (phase === "brand") {
+    return (
+      <main className="flex flex-1 flex-col px-5 pt-4 pb-[140px] animate-fadeIn md:items-center md:pt-10 md:pb-12">
+        <div className="flex w-full flex-col gap-4 md:max-w-[680px]">
+          <section className="rounded-[24px] border border-[#ECEEF2] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:p-8">
+            <span className="text-[12px] font-semibold text-primary">시작하기 전에</span>
+            <h1 className="mt-1 text-[20px] font-bold text-ink-title">브랜드명을 직접 정하시겠습니까?</h1>
+            {idea.trim().length > 0 && <p className="mt-1 text-[13px] text-ink-body">아이디어: {idea}</p>}
+
+            <div className="mt-4 flex gap-3">
+              <button
+                onClick={() => {
+                  setBrandChoice("direct");
+                  setBrandError("");
+                }}
+                className={
+                  "flex flex-1 items-center justify-center rounded-2xl border px-4 py-3.5 text-[15px] font-medium transition-colors duration-200 " +
+                  (brandChoice === "direct" ? "border-primary bg-primary/5 text-primary" : "border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]")
+                }
+              >
+                직접 입력
+              </button>
+              <button
+                onClick={() => void handleBrandAI()}
+                className={
+                  "flex flex-1 items-center justify-center gap-1.5 rounded-2xl border px-4 py-3.5 text-[15px] font-medium transition-colors duration-200 " +
+                  (brandChoice === "ai" ? "border-primary bg-primary/5 text-primary" : "border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]")
+                }
+              >
+                AI에게 추천받기
+              </button>
+            </div>
+
+            {brandError && <p className="mt-3 text-[13px] text-ink-body">{brandError}</p>}
+
+            {brandChoice === "direct" && (
+              <div className="mt-4 animate-fadeIn">
+                <input
+                  value={brandInput}
+                  onChange={(e) => setBrandInput(e.target.value)}
+                  placeholder="예: OneStock"
+                  className="h-[50px] w-full rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 text-base text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <button
+                  onClick={() => saveBrand(brandInput, "직접")}
+                  disabled={brandInput.trim().length === 0}
+                  className="mt-3 flex h-[52px] w-full items-center justify-center rounded-2xl bg-primary text-[15px] font-semibold text-white transition-all duration-200 enabled:hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  저장하고 인터뷰 시작
+                </button>
+              </div>
+            )}
+
+            {brandChoice === "ai" && (
+              <div className="mt-4 animate-fadeIn">
+                {isBrandLoading && (
+                  <p className="flex items-center gap-2 text-[13px] font-medium text-primary">
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary/30 border-t-primary" aria-hidden="true" />
+                    AI가 브랜드명을 만드는 중입니다...
+                  </p>
+                )}
+                {brandOptions && !isBrandLoading && (
+                  <div className="flex flex-col gap-2">
+                    {brandOptions.map((name) => (
+                      <button
+                        key={name}
+                        onClick={() => saveBrand(name, "AI")}
+                        className="flex items-center justify-between rounded-2xl border border-[#E5E8EB] bg-white px-4 py-3 text-[15px] font-semibold text-ink-title transition-colors duration-200 hover:border-primary hover:bg-primary/5"
+                      >
+                        {name}
+                        <span className="text-[12px] font-medium text-primary">선택</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="flex flex-1 flex-col px-5 pt-4 pb-[140px] animate-fadeIn md:items-center md:pt-10 md:pb-12">
@@ -1023,7 +1339,7 @@ function InterviewPage() {
           <div className="mt-6">
             <div className="flex items-center justify-between text-[13px]">
               <span className="font-semibold text-ink-body">
-                {stepIndex + 1} / {INTERVIEW_STEPS.length}
+                STEP {stepIndex + 1} <span className="mx-1 text-[#D1D5DB]" aria-hidden="true">·</span> {step.label}
               </span>
               <span className="font-bold text-primary">{INTERVIEW_PROGRESS[stepIndex]}%</span>
             </div>
@@ -1211,10 +1527,12 @@ async function fetchGeneratePRD(
   instruction?: string,
   currentPrd?: ProjectPRD
 ): Promise<ProjectPRD> {
+  const project = loadCurrentProject();
+  const brandName = typeof project.brandName === "string" ? project.brandName : "";
   const response = await fetch("/api/project/generate-prd", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ idea, answers, instruction, currentPrd }),
+    body: JSON.stringify({ idea, brandName, answers, instruction, currentPrd }),
   });
 
   if (!response.ok) throw new Error(`API error: ${response.status}`);
@@ -1302,33 +1620,6 @@ async function fetchGenerateUI(prd: ProjectPRD, instruction?: string, currentUi?
   return data.ui;
 }
 
-function loadSavedUI(): ProjectUI | null {
-  const project = loadCurrentProject();
-  if (typeof project.ui === "object" && project.ui !== null) {
-    return project.ui as ProjectUI;
-  }
-  return null;
-}
-
-function saveUI(ui: ProjectUI) {
-  updateCurrentProject({ ui, status: "mockup", step: "ui-mockup" });
-
-  try {
-    const current = loadCurrentProject();
-    const id = typeof current.id === "string" ? current.id : "";
-    if (!id) return;
-    const raw = localStorage.getItem(PROJECTS_LIST_KEY);
-    const list = raw ? (JSON.parse(raw) as Record<string, unknown>[]) : [];
-    if (!Array.isArray(list)) return;
-    const updated = list.map((p) =>
-      p.id === id ? { ...p, ui, status: "mockup", step: "ui-mockup", updatedAt: new Date().toISOString() } : p
-    );
-    localStorage.setItem(PROJECTS_LIST_KEY, JSON.stringify(updated));
-  } catch {
-    // 목록 저장 실패는 무시 (현재 프로젝트에는 저장됨)
-  }
-}
-
 /* ---------- 페이지: AI 기획서 화면 ---------- */
 
 function PRDSection({ title, children }: { title: string; children: React.ReactNode }) {
@@ -1374,6 +1665,8 @@ function SummaryPage() {
   const [status, setStatus] = useState<PRDStatus>(() => (loadSavedPRD() ? "ready" : "loading"));
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editRequest, setEditRequest] = useState("");
+  const [isTitleEditing, setIsTitleEditing] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
   const pendingEditRef = useRef<{ instruction: string; prd: ProjectPRD } | null>(null);
 
   useEffect(() => {
@@ -1420,6 +1713,16 @@ function SummaryPage() {
     navigate("/project/interview");
   };
 
+  // 브랜드명(제목) 직접 수정
+  const handleSaveTitle = () => {
+    if (!prd || titleDraft.trim().length === 0) return;
+    const updated = { ...prd, title: titleDraft.trim() };
+    savePRD(updated);
+    updateCurrentProject({ brandName: titleDraft.trim(), brandSource: "직접" });
+    setPrd(updated);
+    setIsTitleEditing(false);
+  };
+
   // 생성 중 화면
   if (status === "loading") {
     return (
@@ -1456,7 +1759,38 @@ function SummaryPage() {
         <section className="flex flex-col gap-4 rounded-[24px] border border-[#ECEEF2] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:p-8">
           <div>
             <span className="text-[12px] font-semibold text-primary">AI 기획서</span>
-            <h1 className="mt-1 text-[24px] font-bold leading-snug text-ink-title">{prd.title}</h1>
+            {isTitleEditing ? (
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  value={titleDraft}
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                  className="h-[44px] min-w-0 flex-1 rounded-xl border border-primary/40 bg-white px-3 text-[18px] font-bold text-ink-title focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <button
+                  onClick={handleSaveTitle}
+                  disabled={titleDraft.trim().length === 0}
+                  className="flex h-[44px] shrink-0 items-center justify-center rounded-xl bg-primary px-4 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  저장
+                </button>
+              </div>
+            ) : (
+              <div className="mt-1 flex items-center gap-2">
+                <h1 className="text-[24px] font-bold leading-snug text-ink-title">{prd.title}</h1>
+                <button
+                  aria-label="브랜드명 수정"
+                  onClick={() => {
+                    setTitleDraft(prd.title);
+                    setIsTitleEditing(true);
+                  }}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink-body transition-colors hover:bg-[#F3F4F6] hover:text-ink-title"
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                  </svg>
+                </button>
+              </div>
+            )}
             <p className="mt-2 text-[15px] leading-relaxed text-ink-body">{prd.summary}</p>
           </div>
 
@@ -1551,7 +1885,7 @@ function SummaryPage() {
               <rect x="4" y="3" width="16" height="18" rx="2.5" />
               <path d="M4 8h16M9 21V8" />
             </svg>
-            UI 목업 생성
+            앱 디자인 미리보기 만들기
           </button>
 
           <button
@@ -1592,365 +1926,1086 @@ function SummaryPage() {
   );
 }
 
-/* ---------- 페이지: UI 목업 ---------- */
+/* ---------- 페이지: 앱 디자인 편집기 (Phase 5) ---------- */
 
-// 컴포넌트 이름을 목업 블록으로 변환
-function MockBlock({ label }: { label: string }) {
+interface UIDesign {
+  style: string;
+  color: string;
+  font: "기본" | "둥근" | "깔끔" | "고급";
+  button: "각짐" | "둥근" | "라운드";
+  dark: boolean;
+}
+
+const DEFAULT_DESIGN: UIDesign = { style: "심플", color: "#4F6BFF", font: "기본", button: "둥근", dark: false };
+const COLOR_OPTIONS = ["#4F6BFF", "#8B5CF6", "#22C55E", "#111827", "#EF4444", "#F97316", "#EAB308"];
+
+interface ElementEdit {
+  label?: string;
+  color?: string;
+  size?: "작게" | "보통" | "크게";
+  radius?: "각짐" | "둥근" | "라운드";
+  weight?: "보통" | "굵게";
+  align?: "left" | "center" | "right";
+  scale?: number; // 80 ~ 130 (%)
+}
+
+type UIOverrides = Record<string, ElementEdit>;
+
+interface EditorState {
+  ui: ProjectUI;
+  design: UIDesign;
+  overrides: UIOverrides;
+}
+
+interface UIVersion {
+  id: number;
+  savedAt: string;
+  note: string;
+  state: EditorState;
+}
+
+function radiusClass(radius: ElementEdit["radius"], base: UIDesign["button"]): string {
+  const r = radius ?? base;
+  if (r === "각짐") return "rounded-md";
+  if (r === "라운드") return "rounded-3xl";
+  return "rounded-xl";
+}
+
+function fontClass(font: UIDesign["font"]): string {
+  if (font === "둥근") return "tracking-wide";
+  if (font === "깔끔") return "tracking-tight";
+  if (font === "고급") return "font-serif";
+  return "";
+}
+
+function loadEditorState(): { ui: ProjectUI | null; design: UIDesign; overrides: UIOverrides; versions: UIVersion[] } {
+  const project = loadCurrentProject();
+  const ui = typeof project.ui === "object" && project.ui !== null ? (project.ui as ProjectUI) : null;
+  const design =
+    typeof project.uiDesign === "object" && project.uiDesign !== null
+      ? { ...DEFAULT_DESIGN, ...(project.uiDesign as Partial<UIDesign>) }
+      : { ...DEFAULT_DESIGN };
+  const overrides =
+    typeof project.uiOverrides === "object" && project.uiOverrides !== null ? (project.uiOverrides as UIOverrides) : {};
+  const versions = Array.isArray(project.uiVersions) ? (project.uiVersions as UIVersion[]) : [];
+  return { ui, design, overrides, versions };
+}
+
+function persistEditor(state: EditorState, versions: UIVersion[]) {
+  updateCurrentProject({
+    ui: state.ui,
+    uiDesign: state.design,
+    uiOverrides: state.overrides,
+    uiVersions: versions.slice(0, 10),
+    status: "mockup",
+    step: "ui-mockup",
+  });
+  try {
+    const current = loadCurrentProject();
+    const id = typeof current.id === "string" ? current.id : "";
+    if (!id) return;
+    const raw = localStorage.getItem(PROJECTS_LIST_KEY);
+    const list = raw ? (JSON.parse(raw) as Record<string, unknown>[]) : [];
+    if (!Array.isArray(list)) return;
+    localStorage.setItem(
+      PROJECTS_LIST_KEY,
+      JSON.stringify(list.map((p) => (p.id === id ? { ...p, ui: state.ui, status: "mockup", updatedAt: new Date().toISOString() } : p)))
+    );
+  } catch {
+    // 목록 저장 실패는 무시
+  }
+}
+
+function screenGroup(screen: UIScreen): "필수 화면" | "추가 화면" | "관리 화면" {
+  const key = screen.id + screen.name;
+  if (/(admin|관리|통계|설정|setting|stat|대시보드)/i.test(key)) return "관리 화면";
+  if (/(home|홈|login|로그인|signup|회원|가입|메인|온보딩|onboard)/i.test(key)) return "필수 화면";
+  return "추가 화면";
+}
+
+function screenIcon(screen: UIScreen) {
+  const key = screen.id + screen.name;
+  const cls = "h-4 w-4";
+  if (/(home|홈|메인)/i.test(key)) return <HomeIcon className={cls} />;
+  if (/(login|로그인)/i.test(key)) return <LogIn className={cls} />;
+  if (/(signup|회원|가입)/i.test(key)) return <UserPlus className={cls} />;
+  if (/(search|검색)/i.test(key)) return <SearchIcon className={cls} />;
+  if (/(my|마이|프로필|profile)/i.test(key)) return <UserIcon className={cls} />;
+  if (/(alarm|알림|notification)/i.test(key)) return <Bell className={cls} />;
+  if (/(setting|설정)/i.test(key)) return <SettingsIcon className={cls} />;
+  if (/(관리|admin|대시보드)/i.test(key)) return <ShieldCheck className={cls} />;
+  if (/(통계|stat|chart|차트|분석)/i.test(key)) return <BarChart3 className={cls} />;
+  if (/(찜|즐겨|관심|favorite|heart)/i.test(key)) return <Heart className={cls} />;
+  if (/(chat|채팅|메시지)/i.test(key)) return <MessageCircle className={cls} />;
+  if (/(calendar|캘린더|일정|예약)/i.test(key)) return <CalendarIcon className={cls} />;
+  if (/(상세|detail|정보)/i.test(key)) return <FileText className={cls} />;
+  return <LayoutGrid className={cls} />;
+}
+
+/* ---------- 목업 블록 ---------- */
+
+function MockBlock({
+  label,
+  design,
+  edit,
+  selected,
+  onSelect,
+}: {
+  label: string;
+  design: UIDesign;
+  edit: ElementEdit;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   const has = (...keys: string[]) => keys.some((k) => label.includes(k));
+  const color = edit.color ?? design.color;
+  const text = edit.label ?? label;
+  const rc = radiusClass(edit.radius, design.button);
+  const scale = (edit.scale ?? 100) / 100;
+  const pad = edit.size === "작게" ? "py-1.5" : edit.size === "크게" ? "py-4" : "py-2.5";
+  const fontSize = `${Math.round(11 * scale * (edit.size === "작게" ? 0.9 : edit.size === "크게" ? 1.2 : 1))}px`;
+  const cardBg = design.dark ? "bg-[#1F2937] border-[#374151]" : "bg-white border-[#ECEEF2]";
+  const softBg = design.dark ? "bg-[#374151]" : "bg-[#F3F4F6]";
+  const lineBg = design.dark ? "bg-[#4B5563]" : "bg-[#E5E8EB]";
+  const bodyText = design.dark ? "text-[#D1D5DB]" : "text-ink-body";
+  const titleText = design.dark ? "text-white" : "text-ink-title";
+  const textStyle: React.CSSProperties = {
+    fontSize,
+    fontWeight: edit.weight === "굵게" ? 700 : undefined,
+    textAlign: edit.align,
+  };
+
+  let inner: React.ReactNode;
 
   if (has("검색")) {
-    return (
-      <div className="flex h-9 items-center gap-2 rounded-xl bg-[#F3F4F6] px-3">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-          <circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
-        </svg>
-        <span className="text-[11px] text-[#9CA3AF]">{label}</span>
+    inner = (
+      <div className={cn("flex h-9 items-center gap-2 px-3", rc, softBg)}>
+        <SearchIcon className="h-3.5 w-3.5 shrink-0 text-[#9CA3AF]" />
+        <span className="min-w-0 flex-1 truncate text-[#9CA3AF]" style={textStyle}>{text}</span>
       </div>
     );
-  }
-  if (has("배너")) {
-    return <div className="flex h-16 items-center justify-center rounded-xl bg-gradient-to-r from-primary/70 to-accent/60 text-[11px] font-semibold text-white">{label}</div>;
-  }
-  if (has("차트", "그래프", "통계")) {
-    return (
-      <div className="rounded-xl border border-[#ECEEF2] p-3">
-        <p className="text-[10px] font-semibold text-ink-body">{label}</p>
+  } else if (has("배너", "공지")) {
+    inner = (
+      <div className={cn("flex h-16 items-center justify-center px-3 font-semibold text-white", rc)} style={{ background: `linear-gradient(90deg, ${color}CC, ${color}88)`, ...textStyle }}>
+        {text}
+      </div>
+    );
+  } else if (has("차트", "그래프", "통계")) {
+    inner = (
+      <div className={cn("border p-3", rc, cardBg)}>
+        <p className={cn("font-semibold", bodyText)} style={textStyle}>{text}</p>
         <div className="mt-2 flex h-14 items-end gap-1.5">
           {[40, 65, 50, 80, 60, 90, 70].map((h, i) => (
-            <div key={i} className="flex-1 rounded-t bg-primary/70" style={{ height: `${h}%` }} />
+            <div key={i} className="flex-1 rounded-t" style={{ height: `${h}%`, background: `${color}B3` }} />
           ))}
         </div>
       </div>
     );
-  }
-  if (has("카드")) {
-    return (
+  } else if (has("카드")) {
+    inner = (
       <div className="grid grid-cols-2 gap-2">
         {[0, 1].map((i) => (
-          <div key={i} className="rounded-xl border border-[#ECEEF2] p-2.5">
-            <div className="h-10 rounded-lg bg-[#F3F4F6]" />
-            <div className="mt-1.5 h-2 w-3/4 rounded bg-[#E5E8EB]" />
-            <div className="mt-1 h-2 w-1/2 rounded bg-[#F3F4F6]" />
+          <div key={i} className={cn("border px-2.5", rc, cardBg, pad)}>
+            <div className={cn("h-10 rounded-lg", softBg)} />
+            <div className={cn("mt-1.5 h-2 w-3/4 rounded", lineBg)} />
+            <div className={cn("mt-1 h-2 w-1/2 rounded", softBg)} />
           </div>
         ))}
       </div>
     );
-  }
-  if (has("리스트", "목록", "알림", "체크")) {
-    return (
-      <div className="divide-y divide-[#ECEEF2] rounded-xl border border-[#ECEEF2]">
+  } else if (has("리스트", "목록", "알림", "체크", "내역")) {
+    inner = (
+      <div className={cn("border", rc, cardBg, design.dark ? "divide-y divide-[#374151]" : "divide-y divide-[#ECEEF2]")}>
         {[0, 1, 2].map((i) => (
-          <div key={i} className="flex items-center gap-2 px-3 py-2">
-            <div className="h-6 w-6 shrink-0 rounded-lg bg-[#F3F4F6]" />
+          <div key={i} className={cn("flex items-center gap-2 px-3", pad)}>
+            <div className={cn("h-6 w-6 shrink-0 rounded-lg", softBg)} />
             <div className="min-w-0 flex-1">
-              <div className="h-2 w-2/3 rounded bg-[#E5E8EB]" />
-              <div className="mt-1 h-2 w-1/3 rounded bg-[#F3F4F6]" />
+              <div className={cn("h-2 w-2/3 rounded", lineBg)} />
+              <div className={cn("mt-1 h-2 w-1/3 rounded", softBg)} />
             </div>
           </div>
         ))}
-        <p className="px-3 py-1.5 text-[9px] text-ink-body">{label}</p>
+        <p className={cn("px-3 py-1.5", bodyText)} style={{ ...textStyle, fontSize: `${Math.round(9 * scale)}px` }}>{text}</p>
       </div>
     );
-  }
-  if (has("프로필")) {
-    return (
-      <div className="flex items-center gap-2.5 rounded-xl border border-[#ECEEF2] p-3">
-        <div className="h-10 w-10 shrink-0 rounded-full bg-[#E5E8EB]" />
+  } else if (has("프로필")) {
+    inner = (
+      <div className={cn("flex items-center gap-2.5 border p-3", rc, cardBg)}>
+        <div className={cn("h-10 w-10 shrink-0 rounded-full", lineBg)} />
         <div className="min-w-0 flex-1">
-          <div className="h-2.5 w-1/2 rounded bg-[#E5E8EB]" />
-          <div className="mt-1.5 h-2 w-2/3 rounded bg-[#F3F4F6]" />
+          <div className={cn("h-2.5 w-1/2 rounded", lineBg)} />
+          <div className={cn("mt-1.5 h-2 w-2/3 rounded", softBg)} />
         </div>
       </div>
     );
-  }
-  if (has("이미지", "사진", "갤러리")) {
-    return (
+  } else if (has("이미지", "사진", "갤러리")) {
+    inner = (
       <div className="grid grid-cols-3 gap-1.5">
         {[0, 1, 2, 3, 4, 5].map((i) => (
-          <div key={i} className="aspect-square rounded-lg bg-[#F3F4F6]" />
+          <div key={i} className={cn("aspect-square rounded-lg", softBg)} />
         ))}
       </div>
     );
-  }
-  if (has("캘린더", "달력", "일정")) {
-    return (
-      <div className="rounded-xl border border-[#ECEEF2] p-3">
-        <p className="text-[10px] font-semibold text-ink-body">{label}</p>
+  } else if (has("캘린더", "달력", "일정")) {
+    inner = (
+      <div className={cn("border p-3", rc, cardBg)}>
+        <p className={cn("font-semibold", bodyText)} style={textStyle}>{text}</p>
         <div className="mt-2 grid grid-cols-7 gap-1">
           {Array.from({ length: 21 }).map((_, i) => (
-            <div key={i} className={"aspect-square rounded " + (i === 9 ? "bg-primary/70" : "bg-[#F3F4F6]")} />
+            <div key={i} className={cn("aspect-square rounded", i === 9 ? "" : softBg)} style={i === 9 ? { background: color } : undefined} />
           ))}
         </div>
       </div>
     );
-  }
-  if (has("탭")) {
-    return (
-      <div className="flex gap-1 rounded-xl bg-[#F3F4F6] p-1">
+  } else if (has("탭") && !has("탭바")) {
+    inner = (
+      <div className={cn("flex gap-1 p-1", rc, softBg)}>
         {["탭 1", "탭 2", "탭 3"].map((t, i) => (
-          <div key={t} className={"flex-1 rounded-lg py-1.5 text-center text-[10px] font-medium " + (i === 0 ? "bg-white text-ink-title shadow-sm" : "text-ink-body")}>{t}</div>
+          <div key={t} className={cn("flex-1 rounded-lg py-1.5 text-center font-medium", i === 0 ? (design.dark ? "bg-[#111827] text-white" : "bg-white text-ink-title shadow-sm") : bodyText)} style={{ fontSize: `${Math.round(10 * scale)}px` }}>{t}</div>
         ))}
       </div>
     );
-  }
-  if (has("입력", "폼")) {
-    return (
+  } else if (has("입력", "폼")) {
+    inner = (
       <div className="flex flex-col gap-2">
-        <div className="h-9 rounded-xl border border-[#E5E8EB] bg-[#F8FAFC] px-3 py-2.5 text-[10px] text-[#9CA3AF]">{label}</div>
-        <div className="h-9 rounded-xl border border-[#E5E8EB] bg-[#F8FAFC]" />
+        <div className={cn("h-9 border px-3 py-2.5 text-[#9CA3AF]", rc, design.dark ? "border-[#374151] bg-[#1F2937]" : "border-[#E5E8EB] bg-[#F8FAFC]")} style={textStyle}>{text}</div>
+        <div className={cn("h-9 border", rc, design.dark ? "border-[#374151] bg-[#1F2937]" : "border-[#E5E8EB] bg-[#F8FAFC]")} />
       </div>
     );
-  }
-  if (has("지도")) {
-    return (
-      <div className="relative h-20 overflow-hidden rounded-xl bg-[#E8F0E9]">
-        <div className="absolute left-1/4 top-1/3 h-2 w-2 rounded-full bg-primary" />
+  } else if (has("지도")) {
+    inner = (
+      <div className={cn("relative h-20 overflow-hidden", rc, design.dark ? "bg-[#374151]" : "bg-[#E8F0E9]")}>
+        <div className="absolute left-1/4 top-1/3 h-2 w-2 rounded-full" style={{ background: color }} />
         <div className="absolute left-2/3 top-1/2 h-2 w-2 rounded-full bg-accent" />
-        <p className="absolute bottom-1 right-2 text-[9px] text-ink-body">{label}</p>
+        <p className={cn("absolute bottom-1 right-2", bodyText)} style={{ fontSize: `${Math.round(9 * scale)}px` }}>{text}</p>
       </div>
     );
-  }
-  if (has("채팅")) {
-    return (
+  } else if (has("채팅")) {
+    inner = (
       <div className="flex flex-col gap-1.5">
-        <div className="max-w-[70%] self-start rounded-2xl rounded-tl-sm bg-[#F3F4F6] px-3 py-1.5 text-[10px] text-ink-body">메시지</div>
-        <div className="max-w-[70%] self-end rounded-2xl rounded-tr-sm bg-primary/80 px-3 py-1.5 text-[10px] text-white">답장</div>
+        <div className={cn("max-w-[70%] self-start rounded-2xl rounded-tl-sm px-3 py-1.5", softBg, bodyText)} style={textStyle}>메시지</div>
+        <div className="max-w-[70%] self-end rounded-2xl rounded-tr-sm px-3 py-1.5 text-white" style={{ background: `${color}D9`, ...textStyle }}>답장</div>
       </div>
     );
-  }
-  if (has("FAB")) {
-    return (
+  } else if (has("FAB")) {
+    inner = (
       <div className="flex justify-end">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-white shadow-lg">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        <div className="flex h-10 w-10 items-center justify-center rounded-full text-white shadow-lg" style={{ background: color }}>
+          <Plus className="h-4 w-4" />
         </div>
       </div>
     );
-  }
-  if (has("버튼")) {
-    return <div className="flex h-10 items-center justify-center rounded-xl bg-primary text-[11px] font-semibold text-white">{label}</div>;
-  }
-  if (has("메뉴", "설정")) {
-    return (
-      <div className="divide-y divide-[#ECEEF2] rounded-xl border border-[#ECEEF2]">
-        {[label, "항목", "항목"].map((t, i) => (
-          <div key={i} className="flex items-center justify-between px-3 py-2 text-[10px] text-ink-title">
+  } else if (has("버튼")) {
+    inner = (
+      <div className={cn("flex items-center justify-center font-semibold text-white", rc, pad)} style={{ background: color, ...textStyle }}>
+        {text}
+      </div>
+    );
+  } else if (has("메뉴", "설정")) {
+    inner = (
+      <div className={cn("border", rc, cardBg, design.dark ? "divide-y divide-[#374151]" : "divide-y divide-[#ECEEF2]")}>
+        {[text, "항목", "항목"].map((t, i) => (
+          <div key={i} className={cn("flex items-center justify-between px-3", pad, titleText)} style={textStyle}>
             {t}
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+            <ChevronDown className="h-3 w-3 -rotate-90 text-[#9CA3AF]" />
           </div>
         ))}
       </div>
     );
+  } else if (has("텍스트", "제목", "인사")) {
+    inner = (
+      <p className={cn("px-0.5 font-bold", titleText)} style={{ ...textStyle, fontSize: `${Math.round(16 * scale)}px` }}>{text}</p>
+    );
+  } else {
+    inner = <div className={cn("flex h-10 items-center justify-center border border-dashed", rc, design.dark ? "border-[#4B5563]" : "border-[#D1D5DB]", bodyText)} style={textStyle}>{text}</div>;
   }
-  return <div className="flex h-10 items-center justify-center rounded-xl border border-dashed border-[#D1D5DB] text-[10px] text-ink-body">{label}</div>;
+
+  return (
+    <motion.button
+      type="button"
+      layout
+      onClick={onSelect}
+      aria-label={`${text} 편집`}
+      whileTap={{ scale: 0.985 }}
+      className={cn(
+        "block w-full rounded-lg text-left transition-shadow duration-150",
+        selected ? "ring-2 ring-primary ring-offset-2" : "hover:ring-2 hover:ring-primary/30"
+      )}
+    >
+      <div className={fontClass(design.font)}>{inner}</div>
+    </motion.button>
+  );
 }
 
-type MockupStatus = "ready" | "loading" | "error";
+/* ---------- 드래그 가능한 화면 목록 아이템 ---------- */
+
+function SortableScreenItem({
+  screen,
+  active,
+  onSelect,
+  onDelete,
+}: {
+  screen: UIScreen;
+  active: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: screen.id });
+  return (
+    <li
+      ref={setNodeRef}
+      style={{ transform: DndCSS.Transform.toString(transform), transition }}
+      className={cn("flex items-center gap-1 rounded-xl", isDragging && "z-10 opacity-80 shadow-lg")}
+    >
+      <button
+        onClick={onSelect}
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[13.5px] transition-colors",
+          active ? "bg-primary/10 font-semibold text-primary" : "font-medium text-ink-body hover:bg-[#F8FAFC]"
+        )}
+      >
+        <span className={cn("shrink-0", active ? "text-primary" : "text-[#9CA3AF]")}>{screenIcon(screen)}</span>
+        <span className="truncate">{screen.name}</span>
+      </button>
+      {active && (
+        <button onClick={onDelete} aria-label="화면 삭제" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-body hover:bg-red-50 hover:text-red-500">
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      )}
+      <span {...attributes} {...listeners} aria-label="순서 변경" className="flex h-7 w-6 shrink-0 cursor-grab touch-none items-center justify-center text-[#C4C9D1] active:cursor-grabbing">
+        <GripVertical className="h-4 w-4" />
+      </span>
+    </li>
+  );
+}
+
+/* ---------- 앱 디자인 편집기 페이지 ---------- */
+
+type EditorPhase = "setup" | "loading" | "ready" | "error" | "done";
+type EditorTab = "preview" | "element" | "ai";
+
+const QUICK_GROUPS: { title: string; items: string[] }[] = [
+  { title: "추가하기", items: ["카드 추가", "버튼 추가", "검색창 추가", "배너 추가", "차트 추가", "아이콘 추가", "목록 추가", "탭 추가", "하단 메뉴 추가", "상단 메뉴 추가", "공지사항 추가"] },
+  { title: "디자인", items: ["더 심플하게", "더 깔끔하게", "더 현대적으로", "더 고급스럽게", "더 귀엽게", "더 세련되게", "간격 넓게", "간격 좁게", "글자 크게", "글자 작게", "더 밝게", "애니메이션 추가"] },
+  { title: "기능", items: ["로그인 추가", "검색 기능 추가", "즐겨찾기 추가", "알림 추가", "공유 기능 추가", "설정 추가"] },
+];
+
+const STYLE_OPTIONS = ["심플", "토스 스타일", "Apple 스타일", "Google 스타일", "카카오 스타일", "AI 추천"];
 
 function MockupPage() {
   const navigate = useNavigate();
-  const [prd] = useState<ProjectPRD | null>(() => loadSavedPRD());
-  const [ui, setUi] = useState<ProjectUI | null>(() => loadSavedUI());
-  const [status, setStatus] = useState<MockupStatus>(() => (loadSavedUI() ? "ready" : "loading"));
-  const [selectedId, setSelectedId] = useState<string>(() => loadSavedUI()?.screens[0]?.id ?? "");
+  const [prd, setPrd] = useState<ProjectPRD | null>(() => loadSavedPRD());
+  const savedEditor = loadEditorState();
+
+  const [ui, setUi] = useState<ProjectUI | null>(savedEditor.ui);
+  const [design, setDesign] = useState<UIDesign>(savedEditor.design);
+  const [overrides, setOverrides] = useState<UIOverrides>(savedEditor.overrides);
+  const [versions, setVersions] = useState<UIVersion[]>(savedEditor.versions);
+  const [phase, setPhase] = useState<EditorPhase>(savedEditor.ui ? "ready" : "setup");
+  const [tab, setTab] = useState<EditorTab>("preview");
+
+  const [selectedScreenId, setSelectedScreenId] = useState<string>(savedEditor.ui?.screens[0]?.id ?? "");
+  const [selectedElement, setSelectedElement] = useState<number | null>(null);
   const [instruction, setInstruction] = useState("");
+  const [newScreenName, setNewScreenName] = useState("");
+  const [isAddingScreen, setIsAddingScreen] = useState(false);
+  const [compare, setCompare] = useState<EditorState | null>(null);
+  const [isTitleEdit, setIsTitleEdit] = useState(false);
+  const [titleInput, setTitleInput] = useState("");
+  const [savedNotice, setSavedNotice] = useState("저장됨");
+
+  const undoStack = useRef<EditorState[]>([]);
+  const redoStack = useRef<EditorState[]>([]);
   const pendingInstructionRef = useRef<string | undefined>(undefined);
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } })
+  );
+
+  const currentState = (): EditorState => ({ ui: ui as ProjectUI, design, overrides });
+
+  const flashSaved = () => {
+    setSavedNotice("저장 중...");
+    window.setTimeout(() => setSavedNotice("저장됨"), 500);
+  };
+
+  const save = (next: Partial<EditorState>, versionNote?: string) => {
+    const state: EditorState = { ui: (next.ui ?? ui) as ProjectUI, design: next.design ?? design, overrides: next.overrides ?? overrides };
+    let nextVersions = versions;
+    if (versionNote) {
+      nextVersions = [{ id: Date.now(), savedAt: new Date().toLocaleString("ko-KR", { hour: "2-digit", minute: "2-digit" }), note: versionNote, state }, ...versions].slice(0, 10);
+      setVersions(nextVersions);
+    }
+    persistEditor(state, nextVersions);
+    flashSaved();
+  };
+
+  const pushHistory = () => {
+    if (!ui) return;
+    undoStack.current = [...undoStack.current.slice(-19), currentState()];
+    redoStack.current = [];
+  };
+
+  const applyState = (state: EditorState) => {
+    setUi(state.ui);
+    setDesign(state.design);
+    setOverrides(state.overrides);
+    if (!state.ui.screens.some((sc) => sc.id === selectedScreenId)) {
+      setSelectedScreenId(state.ui.screens[0]?.id ?? "");
+    }
+    setSelectedElement(null);
+    persistEditor(state, versions);
+    flashSaved();
+  };
+
+  const handleUndo = () => {
+    const prev = undoStack.current.pop();
+    if (!prev || !ui) return;
+    redoStack.current.push(currentState());
+    applyState(prev);
+  };
+
+  const handleRedo = () => {
+    const next = redoStack.current.pop();
+    if (!next || !ui) return;
+    undoStack.current.push(currentState());
+    applyState(next);
+  };
+
+  // ---- AI 생성/수정 ----
   useEffect(() => {
-    if (!prd || status !== "loading") return;
+    if (!prd || phase !== "loading") return;
     let cancelled = false;
 
     (async () => {
       try {
         const pending = pendingInstructionRef.current;
         pendingInstructionRef.current = undefined;
-        const generated = await fetchGenerateUI(prd, pending, pending ? ui ?? undefined : undefined);
+        const generated = await fetchGenerateUI(prd, pending, pending && ui ? ui : undefined);
         if (cancelled) return;
-        saveUI(generated);
+        if (ui) {
+          setCompare({ ui, design, overrides });
+          pushHistory();
+        }
         setUi(generated);
-        setSelectedId((prev) => (generated.screens.some((sc) => sc.id === prev) ? prev : generated.screens[0]?.id ?? ""));
-        setStatus("ready");
+        setOverrides({});
+        setSelectedElement(null);
+        setSelectedScreenId((prev) => (generated.screens.some((sc) => sc.id === prev) ? prev : generated.screens[0]?.id ?? ""));
+        save({ ui: generated, overrides: {} }, pending ? `AI 수정: ${pending.slice(0, 16)}` : "첫 디자인 생성");
+        setPhase("ready");
       } catch {
-        if (!cancelled) setStatus("error");
+        if (!cancelled) setPhase("error");
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [prd, status, ui]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, prd]);
 
-  // 기획서가 없으면 목업을 만들 수 없음
+  const runAI = (text: string) => {
+    if (!text.trim()) return;
+    pendingInstructionRef.current = `${text.trim()} (스타일: ${design.style}, 메인 색상: ${design.color})`;
+    setPhase("loading");
+    window.scrollTo(0, 0);
+  };
+
+  const setToken = <K extends keyof UIDesign>(key: K, value: UIDesign[K]) => {
+    pushHistory();
+    const nextDesign = { ...design, [key]: value };
+    setDesign(nextDesign);
+    save({ design: nextDesign });
+  };
+
+  // ---- 요소 편집 ----
+  const overrideKey = (screenId: string, index: number) => `${screenId}:${index}`;
+
+  const updateElement = (patch: ElementEdit) => {
+    if (!ui || selectedElement === null) return;
+    pushHistory();
+    const key = overrideKey(selectedScreenId, selectedElement);
+    const nextOverrides = { ...overrides, [key]: { ...overrides[key], ...patch } };
+    setOverrides(nextOverrides);
+    save({ overrides: nextOverrides });
+  };
+
+  const resetElement = () => {
+    if (!ui || selectedElement === null) return;
+    pushHistory();
+    const key = overrideKey(selectedScreenId, selectedElement);
+    const nextOverrides = { ...overrides };
+    delete nextOverrides[key];
+    setOverrides(nextOverrides);
+    save({ overrides: nextOverrides });
+  };
+
+  const deleteElement = () => {
+    if (!ui || selectedElement === null) return;
+    pushHistory();
+    const nextScreens = ui.screens.map((sc) =>
+      sc.id === selectedScreenId ? { ...sc, components: sc.components.filter((_, i) => i !== selectedElement) } : sc
+    );
+    const nextUi = { ...ui, screens: nextScreens };
+    setUi(nextUi);
+    setSelectedElement(null);
+    save({ ui: nextUi });
+    setTab("preview");
+  };
+
+  // ---- 화면 관리 ----
+  const handleAddScreen = () => {
+    if (!newScreenName.trim()) return;
+    runAI(`'${newScreenName.trim()}' 화면을 새로 추가해줘. 기존 화면은 유지해줘.`);
+    setNewScreenName("");
+    setIsAddingScreen(false);
+  };
+
+  const handleDeleteScreen = (id: string) => {
+    if (!ui || ui.screens.length <= 1) return;
+    pushHistory();
+    const nextUi = { ...ui, screens: ui.screens.filter((sc) => sc.id !== id) };
+    setUi(nextUi);
+    if (selectedScreenId === id) setSelectedScreenId(nextUi.screens[0].id);
+    save({ ui: nextUi });
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    if (!ui) return;
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = ui.screens.findIndex((sc) => sc.id === active.id);
+    const newIndex = ui.screens.findIndex((sc) => sc.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    pushHistory();
+    const nextUi = { ...ui, screens: arrayMove(ui.screens, oldIndex, newIndex) };
+    setUi(nextUi);
+    save({ ui: nextUi });
+  };
+
+  // ---- 브랜드명 수정 ----
+  const handleSaveTitle = () => {
+    if (!prd || titleInput.trim().length === 0) return;
+    const nextPrd = { ...prd, title: titleInput.trim() };
+    setPrd(nextPrd);
+    savePRD(nextPrd);
+    updateCurrentProject({ brandName: titleInput.trim() });
+    setIsTitleEdit(false);
+    flashSaved();
+  };
+
+  // ---- AI 추천 개선사항 (화면 분석 기반) ----
+  const buildSuggestions = (screen: UIScreen): { text: string; action: string }[] => {
+    const all = screen.components.join(" ");
+    const suggestions: { text: string; action: string }[] = [];
+    if (!all.includes("검색")) suggestions.push({ text: "검색창을 추가하면 사용성이 좋아집니다.", action: "검색창 추가" });
+    if (!all.includes("버튼")) suggestions.push({ text: "이동을 유도하는 버튼을 추가하는 것을 추천합니다.", action: "버튼 추가" });
+    else suggestions.push({ text: "버튼을 조금 더 크게 하면 누르기 쉬워집니다.", action: "버튼을 더 크게" });
+    if (!all.includes("차트") && !all.includes("통계")) suggestions.push({ text: "차트를 추가하면 정보가 한눈에 들어옵니다.", action: "차트 추가" });
+    if (all.includes("카드")) suggestions.push({ text: "카드 간격을 넓히면 가독성이 좋아집니다.", action: "카드 간격을 넓게" });
+    suggestions.push({ text: "하단 메뉴 아이콘을 더 직관적으로 바꿔보세요.", action: "하단 메뉴 아이콘을 더 직관적으로" });
+    return suggestions.slice(0, 4);
+  };
+
+  const handleRevertCompare = () => {
+    if (!compare) return;
+    applyState(compare);
+    setCompare(null);
+  };
+
+  const handleConfirmDesign = () => {
+    if (!ui) return;
+    save({}, "디자인 확정");
+    updateCurrentProject({ status: "design-confirmed", step: "design-done", progress: 60 });
+    setPhase("done");
+    window.scrollTo(0, 0);
+  };
+
+  // ================= 분기 화면 =================
+
   if (!prd) {
     return (
       <main className="flex flex-1 flex-col items-center justify-center gap-3 px-5 pt-4 pb-[140px] animate-fadeIn md:pb-12">
-        <p className="text-[15px] text-ink-body">먼저 인터뷰를 완료하고 기획서를 생성해주세요.</p>
-        <button
-          onClick={() => navigate("/project/summary")}
-          className="flex h-[48px] w-full max-w-[280px] items-center justify-center rounded-2xl bg-primary text-[15px] font-semibold text-white"
-        >
+        <p className="text-[15px] text-ink-body">먼저 인터뷰를 완료하고 기획서를 만들어주세요.</p>
+        <button onClick={() => navigate("/project/summary")} className="flex h-[48px] w-full max-w-[280px] items-center justify-center rounded-2xl bg-primary text-[15px] font-semibold text-white">
           기획서 화면으로
         </button>
       </main>
     );
   }
 
-  if (status === "loading") {
+  if (phase === "setup") {
     return (
-      <main className="flex flex-1 flex-col items-center justify-center gap-4 px-5 pt-4 pb-[140px] animate-fadeIn md:pb-12">
-        <span className="h-10 w-10 animate-spin rounded-full border-[3px] border-primary/20 border-t-primary" aria-hidden="true" />
-        <div className="text-center">
-          <p className="text-[16px] font-semibold text-ink-title">AI가 화면을 설계하고 있습니다.</p>
-          <p className="mt-1 text-[14px] text-ink-body">UI 목업을 생성하는 중입니다. (예상 5~15초)</p>
+      <main className="flex flex-1 flex-col px-5 pt-4 pb-[140px] animate-fadeIn md:items-center md:pt-10 md:pb-12">
+        <div className="flex w-full flex-col gap-4 md:max-w-[560px]">
+          <section className="rounded-[24px] border border-[#ECEEF2] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:p-8">
+            <span className="text-[12px] font-semibold text-primary">앱 디자인 미리보기</span>
+            <h1 className="mt-1 text-[22px] font-bold text-ink-title">어떤 스타일로 만들까요?</h1>
+            <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+              {STYLE_OPTIONS.map((style) => (
+                <button key={style} onClick={() => setDesign((d) => ({ ...d, style }))} className={cn("rounded-2xl border px-3 py-3.5 text-[14px] font-medium transition-colors", design.style === style ? "border-primary bg-primary/5 text-primary" : "border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]")}>
+                  {style}
+                </button>
+              ))}
+            </div>
+            <h2 className="mt-6 text-[15px] font-semibold text-ink-title">메인 색상</h2>
+            <div className="mt-3 flex flex-wrap items-center gap-2.5">
+              {COLOR_OPTIONS.map((color) => (
+                <button key={color} onClick={() => setDesign((d) => ({ ...d, color }))} aria-label={`색상 ${color}`} className={cn("h-9 w-9 rounded-full transition-transform", design.color === color ? "scale-110 ring-2 ring-primary ring-offset-2" : "hover:scale-105")} style={{ background: color }} />
+              ))}
+              <label className="flex h-9 cursor-pointer items-center gap-1.5 rounded-badge border border-[#E5E8EB] px-3 text-[12px] font-medium text-ink-body">
+                직접 선택
+                <input type="color" value={design.color} onChange={(e) => setDesign((d) => ({ ...d, color: e.target.value }))} className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0" />
+              </label>
+            </div>
+            <button
+              onClick={() => { persistEditor({ ui: { theme: "", navigation: "", flow: [], screens: [] }, design, overrides: {} }, versions); runAI("이 서비스의 앱 디자인을 처음 만들어줘"); }}
+              className="mt-6 flex h-[52px] w-full items-center justify-center rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)] transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
+            >
+              디자인 미리보기 만들기
+            </button>
+          </section>
         </div>
       </main>
     );
   }
 
-  if (status === "error" || !ui) {
+  if (phase === "loading") {
+    return (
+      <main className="flex flex-1 flex-col items-center justify-center gap-4 px-5 pt-4 pb-[140px] animate-fadeIn md:pb-12">
+        <span className="h-10 w-10 animate-spin rounded-full border-[3px] border-primary/20 border-t-primary" aria-hidden="true" />
+        <div className="text-center">
+          <p className="text-[16px] font-semibold text-ink-title">AI가 디자인을 만들고 있습니다.</p>
+          <p className="mt-1 text-[14px] text-ink-body">잠시만 기다려주세요. (예상 5~15초)</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (phase === "error" || !ui) {
     return (
       <main className="flex flex-1 flex-col items-center justify-center gap-4 px-5 pt-4 pb-[140px] animate-fadeIn md:pb-12">
         <p className="text-[16px] font-semibold text-ink-title">생성 실패</p>
-        <p className="text-[14px] text-ink-body">UI 목업 생성에 실패했습니다. 잠시 후 다시 시도해주세요.</p>
-        <button
-          onClick={() => setStatus("loading")}
-          className="flex h-[48px] w-full max-w-[280px] items-center justify-center rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)] transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
-        >
+        <p className="text-[14px] text-ink-body">디자인 생성에 실패했습니다. 잠시 후 다시 시도해주세요.</p>
+        <button onClick={() => setPhase(ui ? "loading" : "setup")} className="flex h-[48px] w-full max-w-[280px] items-center justify-center rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)]">
           다시 시도
         </button>
       </main>
     );
   }
 
-  const selected = ui.screens.find((sc) => sc.id === selectedId) ?? ui.screens[0];
-  const isBottomTab = ui.navigation.includes("Bottom") || ui.navigation.includes("혼합");
-
-  const handleModify = () => {
-    if (instruction.trim().length === 0) return;
-    pendingInstructionRef.current = instruction.trim();
-    setInstruction("");
-    setStatus("loading");
-    window.scrollTo(0, 0);
-  };
-
-  return (
-    <main className="flex flex-1 flex-col px-5 pt-4 pb-[140px] animate-fadeIn md:items-center md:pt-8 md:pb-12">
-      <div className="flex w-full flex-col gap-4 md:max-w-[1080px]">
+  if (phase === "done") {
+    return (
+      <main className="flex flex-1 flex-col items-center justify-center gap-4 px-5 pt-4 pb-[140px] text-center animate-fadeIn md:pb-12">
+        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+          <Check className="h-7 w-7 text-primary" />
+        </span>
         <div>
-          <span className="text-[12px] font-semibold text-primary">AI UI 목업</span>
-          <h1 className="mt-1 text-[22px] font-bold text-ink-title">{prd.title}</h1>
-          <p className="mt-1 text-[13px] text-ink-body">
-            스타일: {ui.theme || "-"} · 내비게이션: {ui.navigation || "-"}
-          </p>
+          <p className="text-[18px] font-bold text-ink-title">디자인이 완료되었습니다.</p>
+          <p className="mt-1.5 text-[14px] leading-relaxed text-ink-body">다음으로 React 코드 생성을 진행합니다.<br />코드 생성 기능은 다음 단계에서 열립니다.</p>
+        </div>
+        <button onClick={() => setPhase("ready")} className="flex h-[48px] w-full max-w-[280px] items-center justify-center rounded-2xl border border-[#E5E8EB] bg-white text-[14px] font-semibold text-ink-title hover:border-[#D1D5DB]">
+          디자인 다시 수정하기
+        </button>
+      </main>
+    );
+  }
+
+  const selectedScreen = ui.screens.find((sc) => sc.id === selectedScreenId) ?? ui.screens[0];
+  const selectedEdit = selectedElement !== null ? overrides[overrideKey(selectedScreen.id, selectedElement)] ?? {} : null;
+  const isBottomTab = ui.navigation.includes("Bottom") || ui.navigation.includes("혼합");
+  const groupNames: ("필수 화면" | "추가 화면" | "관리 화면")[] = ["필수 화면", "추가 화면", "관리 화면"];
+  const suggestions = buildSuggestions(selectedScreen);
+
+  /* ---------- 공용 조각 ---------- */
+
+  const phonePreview = (
+    <div className={cn("relative w-full max-w-[300px] overflow-hidden rounded-[34px] border-[7px] border-[#111827] shadow-[0_16px_40px_rgba(15,23,42,0.18)]", design.dark ? "bg-[#111827]" : "bg-white")}>
+      {/* 상태바 + 노치 */}
+      <div className={cn("relative flex h-9 items-end justify-between px-5 pb-1", design.dark ? "bg-[#111827]" : "bg-white")}>
+        <span className={cn("text-[10px] font-bold", design.dark ? "text-white" : "text-ink-title")}>9:41</span>
+        <span className="absolute left-1/2 top-0 h-5 w-24 -translate-x-1/2 rounded-b-2xl bg-[#111827]" aria-hidden="true" />
+        <span className={cn("flex items-center gap-1 text-[9px]", design.dark ? "text-white" : "text-ink-title")} aria-hidden="true">▮▮▮ ⏻</span>
+      </div>
+      <div className={cn("flex h-8 items-center justify-center border-b", design.dark ? "border-[#374151]" : "border-[#ECEEF2]")}>
+        <span className={cn("truncate px-4 text-[11.5px] font-bold", design.dark ? "text-white" : "text-ink-title")}>{selectedScreen.name}</span>
+      </div>
+      <div className={cn("flex min-h-[380px] flex-col gap-2.5 p-3", design.dark ? "bg-[#0B1220]" : "bg-[#F8FAFC]")}>
+        {selectedScreen.components.length === 0 && (
+          <p className="py-10 text-center text-[11px] text-ink-body">구성 요소가 없습니다. AI 수정으로 추가해보세요.</p>
+        )}
+        {selectedScreen.components.map((component, index) => (
+          <MockBlock
+            key={component + index}
+            label={component}
+            design={design}
+            edit={overrides[overrideKey(selectedScreen.id, index)] ?? {}}
+            selected={selectedElement === index}
+            onSelect={() => {
+              setSelectedElement((prev) => (prev === index ? null : index));
+              if (selectedElement !== index) setTab("element");
+            }}
+          />
+        ))}
+      </div>
+      {isBottomTab && (
+        <div className={cn("flex items-center justify-around border-t py-1.5", design.dark ? "border-[#374151] bg-[#111827]" : "border-[#ECEEF2] bg-white")}>
+          {ui.screens.slice(0, 5).map((screen) => (
+            <button key={screen.id} onClick={() => { setSelectedScreenId(screen.id); setSelectedElement(null); }} className="flex flex-col items-center gap-0.5 px-1">
+              <span style={{ color: screen.id === selectedScreen.id ? design.color : "#9CA3AF" }}>{screenIcon(screen)}</span>
+              <span className={cn("max-w-[48px] truncate text-[8.5px]", screen.id === selectedScreen.id ? "font-semibold" : "text-[#9CA3AF]")} style={screen.id === selectedScreen.id ? { color: design.color } : undefined}>{screen.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const screenListPanel = (
+    <div className="flex flex-col gap-2.5">
+      <div className="flex items-center justify-between px-1">
+        <h2 className="text-[14px] font-bold text-ink-title">화면 목록</h2>
+        <button onClick={() => setIsAddingScreen((v) => !v)} className="flex h-8 items-center gap-1 rounded-xl border border-[#E5E8EB] bg-white px-2.5 text-[12px] font-semibold text-ink-title hover:border-[#D1D5DB]">
+          <Plus className="h-3.5 w-3.5" /> 새 화면
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {isAddingScreen && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+            <div className="rounded-2xl border border-dashed border-[#D1D5DB] p-2.5">
+              <input
+                value={newScreenName}
+                onChange={(e) => setNewScreenName(e.target.value)}
+                placeholder="예: 채팅"
+                className="h-10 w-full rounded-xl border border-[#E5E8EB] bg-[#F8FAFC] px-3 text-base text-ink-title placeholder:text-[13px] placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <button onClick={handleAddScreen} disabled={newScreenName.trim().length === 0} className="mt-1.5 flex h-9 w-full items-center justify-center rounded-xl bg-primary text-[12.5px] font-semibold text-white transition-colors disabled:opacity-40">
+                + 새 화면 추가 (AI)
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={ui.screens.map((sc) => sc.id)} strategy={verticalListSortingStrategy}>
+          {groupNames.map((group) => {
+            const items = ui.screens.filter((sc) => screenGroup(sc) === group);
+            if (items.length === 0) return null;
+            return (
+              <div key={group} className="rounded-2xl border border-[#ECEEF2] bg-white p-2">
+                <p className="px-2 py-1.5 text-[11.5px] font-bold text-ink-body">{group}</p>
+                <ul className="flex flex-col gap-0.5">
+                  {items.map((screen) => (
+                    <SortableScreenItem
+                      key={screen.id}
+                      screen={screen}
+                      active={screen.id === selectedScreen.id}
+                      onSelect={() => { setSelectedScreenId(screen.id); setSelectedElement(null); }}
+                      onDelete={() => handleDeleteScreen(screen.id)}
+                    />
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </SortableContext>
+      </DndContext>
+    </div>
+  );
+
+  const elementPanel =
+    selectedEdit !== null && selectedElement !== null ? (
+      <section className="rounded-2xl border border-primary/40 bg-white p-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-[13.5px] font-bold text-ink-title">선택된 요소</h2>
+          <div className="flex items-center gap-2">
+            <button onClick={deleteElement} className="flex items-center gap-1 text-[12px] font-semibold text-red-500 hover:text-red-600">
+              <Trash2 className="h-3.5 w-3.5" /> 삭제
+            </button>
+            <button onClick={() => setSelectedElement(null)} aria-label="선택 해제" className="text-ink-body hover:text-ink-title">
+              <XIcon className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
-        {ui.flow.length > 0 && (
-          <div className="flex flex-wrap items-center gap-y-1.5 rounded-2xl border border-[#ECEEF2] bg-white px-4 py-3">
-            {ui.flow.map((f, index) => (
-              <span key={f + index} className="flex items-center text-[12px] font-medium text-ink-title">
-                {f}
-                {index < ui.flow.length - 1 && <span className="mx-1.5 text-primary" aria-hidden="true">→</span>}
-              </span>
-            ))}
+        <div className="mt-2.5 flex items-center gap-2.5 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2.5">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-primary shadow-sm">
+            <Smartphone className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium text-ink-body">화면 구성 요소</p>
+            <p className="truncate text-[13.5px] font-semibold text-ink-title">{selectedEdit.label ?? selectedScreen.components[selectedElement]}</p>
           </div>
-        )}
+        </div>
 
-        <div className="flex flex-col gap-4 md:flex-row md:items-start">
-          {/* 왼쪽: 화면 목록 */}
-          <nav className="shrink-0 md:w-[180px]" aria-label="화면 목록">
-            <ul className="flex gap-2 overflow-x-auto pb-1 md:flex-col md:overflow-visible">
-              {ui.screens.map((screen) => {
-                const isActive = screen.id === selected.id;
-                return (
-                  <li key={screen.id} className="shrink-0 md:shrink">
-                    <button
-                      onClick={() => setSelectedId(screen.id)}
-                      className={
-                        "w-full whitespace-nowrap rounded-xl px-4 py-2.5 text-left text-[13px] transition-colors duration-200 md:whitespace-normal " +
-                        (isActive
-                          ? "bg-primary/10 font-semibold text-primary"
-                          : "bg-white font-medium text-ink-body border border-[#ECEEF2] hover:border-[#D1D5DB]")
-                      }
-                    >
-                      {screen.name}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </nav>
+        <label className="mt-4 block text-[12px] font-semibold text-ink-body">
+          내용
+          <input
+            value={selectedEdit.label ?? selectedScreen.components[selectedElement]}
+            onChange={(e) => updateElement({ label: e.target.value })}
+            className="mt-1 h-10 w-full rounded-xl border border-[#E5E8EB] bg-[#F8FAFC] px-3 text-base text-ink-title focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+        </label>
 
-          {/* 가운데: 미리보기 (폰 프레임) */}
-          <div className="flex flex-1 justify-center">
-            <div className="w-full max-w-[300px] overflow-hidden rounded-[28px] border-[6px] border-[#111827] bg-white shadow-[0_16px_40px_rgba(15,23,42,0.18)]">
-              <div className="flex h-8 items-center justify-center border-b border-[#ECEEF2] bg-white">
-                <span className="truncate px-4 text-[11px] font-bold text-ink-title">{selected.name}</span>
-              </div>
-              <div className="flex min-h-[380px] flex-col gap-2.5 bg-[#F8FAFC] p-3">
-                {selected.components.length === 0 && (
-                  <p className="py-10 text-center text-[11px] text-ink-body">구성 컴포넌트가 없습니다.</p>
+        <p className="mt-4 text-[12px] font-semibold text-ink-body">글자 크기</p>
+        <div className="mt-1.5 flex gap-1.5">
+          {(["작게", "보통", "크게"] as const).map((size) => (
+            <button key={size} onClick={() => updateElement({ size })} className={cn("flex-1 rounded-xl py-2 text-[12.5px] transition-colors", (selectedEdit.size ?? "보통") === size ? "bg-primary/10 font-semibold text-primary ring-1 ring-primary/40" : "bg-[#F3F4F6] text-ink-body hover:bg-[#ECEEF2]")}>{size}</button>
+          ))}
+        </div>
+        <div className="mt-2 flex items-center gap-2.5">
+          <button onClick={() => updateElement({ scale: Math.max(80, (selectedEdit.scale ?? 100) - 10) })} aria-label="작게" className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#E5E8EB] text-ink-body"><Minus className="h-3.5 w-3.5" /></button>
+          <input
+            type="range" min={80} max={130} step={5}
+            value={selectedEdit.scale ?? 100}
+            onChange={(e) => updateElement({ scale: Number(e.target.value) })}
+            className="h-1.5 flex-1 cursor-pointer accent-[#4F6BFF]"
+            aria-label="글자 크기 조절"
+          />
+          <button onClick={() => updateElement({ scale: Math.min(130, (selectedEdit.scale ?? 100) + 10) })} aria-label="크게" className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#E5E8EB] text-ink-body"><Plus className="h-3.5 w-3.5" /></button>
+        </div>
+
+        <p className="mt-4 text-[12px] font-semibold text-ink-body">색상</p>
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          {COLOR_OPTIONS.map((color) => (
+            <button key={color} onClick={() => updateElement({ color })} aria-label={`색상 ${color}`} className={cn("flex h-7 w-7 items-center justify-center rounded-full transition-transform", (selectedEdit.color ?? design.color) === color ? "scale-110 ring-2 ring-primary ring-offset-1" : "hover:scale-110")} style={{ background: color }}>
+              {(selectedEdit.color ?? design.color) === color && <Check className="h-3.5 w-3.5 text-white" />}
+            </button>
+          ))}
+          <input type="color" value={selectedEdit.color ?? design.color} onChange={(e) => updateElement({ color: e.target.value })} aria-label="색상 직접 선택" className="h-7 w-8 cursor-pointer rounded border border-[#E5E8EB] bg-transparent p-0" />
+        </div>
+
+        <p className="mt-4 text-[12px] font-semibold text-ink-body">굵기</p>
+        <div className="mt-1.5 flex gap-1.5">
+          {(["보통", "굵게"] as const).map((weight) => (
+            <button key={weight} onClick={() => updateElement({ weight })} className={cn("flex-1 rounded-xl py-2 text-[12.5px] transition-colors", (selectedEdit.weight ?? "보통") === weight ? "bg-primary/10 font-semibold text-primary ring-1 ring-primary/40" : "bg-[#F3F4F6] text-ink-body hover:bg-[#ECEEF2]", weight === "굵게" && "font-bold")}>{weight}</button>
+          ))}
+        </div>
+
+        <p className="mt-4 text-[12px] font-semibold text-ink-body">정렬</p>
+        <div className="mt-1.5 flex gap-1.5">
+          {([["left", "왼쪽"], ["center", "가운데"], ["right", "오른쪽"]] as const).map(([align, label]) => (
+            <button key={align} onClick={() => updateElement({ align })} className={cn("flex-1 rounded-xl py-2 text-[12.5px] transition-colors", (selectedEdit.align ?? "left") === align ? "bg-primary/10 font-semibold text-primary ring-1 ring-primary/40" : "bg-[#F3F4F6] text-ink-body hover:bg-[#ECEEF2]")}>{label}</button>
+          ))}
+        </div>
+
+        <p className="mt-4 text-[12px] font-semibold text-ink-body">모서리</p>
+        <div className="mt-1.5 flex gap-1.5">
+          {(["각짐", "둥근", "라운드"] as const).map((radius) => (
+            <button key={radius} onClick={() => updateElement({ radius })} className={cn("flex-1 py-2 text-[12.5px] transition-colors", radius === "각짐" ? "rounded-md" : radius === "둥근" ? "rounded-xl" : "rounded-badge", (selectedEdit.radius ?? design.button) === radius ? "bg-primary/10 font-semibold text-primary ring-1 ring-primary/40" : "bg-[#F3F4F6] text-ink-body hover:bg-[#ECEEF2]")}>{radius}</button>
+          ))}
+        </div>
+
+        <button onClick={resetElement} className="mt-5 flex h-10 w-full items-center justify-center rounded-xl border border-[#E5E8EB] bg-white text-[12.5px] font-semibold text-ink-body hover:border-[#D1D5DB]">
+          변경 초기화
+        </button>
+      </section>
+    ) : (
+      <section className="rounded-2xl border border-[#ECEEF2] bg-white p-5 text-center">
+        <Smartphone className="mx-auto h-7 w-7 text-[#C4C9D1]" />
+        <p className="mt-2 text-[13.5px] font-semibold text-ink-title">수정할 요소를 선택해주세요</p>
+        <p className="mt-1 text-[12.5px] leading-relaxed text-ink-body">미리보기 화면에서 텍스트, 버튼, 카드 등을 누르면 여기에서 바로 수정할 수 있어요.</p>
+      </section>
+    );
+
+  const aiPanel = (
+    <div className="flex flex-col gap-3">
+      <section className="rounded-2xl border border-[#ECEEF2] bg-white p-4">
+        <h2 className="flex items-center gap-1.5 text-[13.5px] font-bold text-ink-title">
+          <Wand2 className="h-4 w-4 text-primary" /> 빠른 수정
+        </h2>
+        <p className="mt-0.5 text-[11.5px] text-ink-body">버튼을 누르면 아래 요청창에 자동으로 입력돼요.</p>
+        {QUICK_GROUPS.map((group) => (
+          <div key={group.title} className="mt-3">
+            <p className="text-[11.5px] font-bold text-primary">{group.title}</p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {group.items.map((item) => (
+                <button key={item} onClick={() => setInstruction(item)} className="rounded-badge border border-[#E5E8EB] bg-white px-2.5 py-1.5 text-[11.5px] font-medium text-ink-title transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary">
+                  {item}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+        <div className="mt-3">
+          <p className="text-[11.5px] font-bold text-primary">색상</p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            {COLOR_OPTIONS.map((color) => (
+              <button key={color} onClick={() => setToken("color", color)} aria-label={`메인 색상 ${color}`} className={cn("h-7 w-7 rounded-full transition-transform", design.color === color ? "scale-110 ring-2 ring-primary ring-offset-1" : "hover:scale-110")} style={{ background: color }} />
+            ))}
+            <input type="color" value={design.color} onChange={(e) => setToken("color", e.target.value)} aria-label="메인 색상 직접 선택" className="h-7 w-8 cursor-pointer rounded border border-[#E5E8EB] bg-transparent p-0" />
+            <button onClick={() => setToken("dark", !design.dark)} className={cn("rounded-badge px-3 py-1.5 text-[11.5px] font-semibold transition-colors", design.dark ? "bg-ink-title text-white" : "bg-[#F3F4F6] text-ink-body hover:bg-[#ECEEF2]")}>다크모드</button>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-primary/25 bg-primary/5 p-4">
+        <h2 className="flex items-center gap-1.5 text-[13.5px] font-bold text-primary">
+          <Sparkles className="h-4 w-4" /> AI에게 직접 요청하기
+        </h2>
+        <textarea
+          value={instruction}
+          onChange={(e) => setInstruction(e.target.value)}
+          placeholder="원하는 디자인을 입력하세요..."
+          className="mt-2 min-h-[68px] w-full resize-none rounded-xl border border-[#E5E8EB] bg-white px-3 py-2.5 text-base leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+        <p className="mt-1 text-[11px] leading-relaxed text-ink-body">예) 홈 화면을 토스처럼 만들어줘 · 검색창을 위로 올려줘 · 차트를 크게 만들어줘</p>
+        <button
+          onClick={() => { runAI(instruction); setInstruction(""); }}
+          disabled={instruction.trim().length === 0}
+          className="mt-2 flex h-[44px] w-full items-center justify-center gap-1.5 rounded-xl bg-primary text-[13.5px] font-semibold text-white transition-all duration-200 enabled:hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <Sparkles className="h-4 w-4" /> AI로 수정하기
+        </button>
+      </section>
+
+      <section className="rounded-2xl border border-[#ECEEF2] bg-white p-4">
+        <h2 className="flex items-center gap-1.5 text-[13.5px] font-bold text-ink-title">
+          <Lightbulb className="h-4 w-4 text-[#F59E0B]" /> AI가 추천하는 개선사항
+        </h2>
+        <ul className="mt-2 flex flex-col gap-2">
+          {suggestions.map((suggestion) => (
+            <li key={suggestion.text} className="flex items-center justify-between gap-2 rounded-xl bg-[#F8FAFC] px-3 py-2.5">
+              <p className="min-w-0 text-[12.5px] leading-snug text-ink-title">{suggestion.text}</p>
+              <button onClick={() => runAI(suggestion.action)} className="shrink-0 rounded-lg border border-primary/40 bg-white px-2.5 py-1 text-[11.5px] font-semibold text-primary hover:bg-primary/5">적용</button>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {versions.length > 0 && (
+        <section className="rounded-2xl border border-[#ECEEF2] bg-white p-4">
+          <h2 className="text-[13.5px] font-bold text-ink-title">버전 관리</h2>
+          <ul className="mt-2 flex flex-col gap-1.5">
+            {versions.map((version, index) => (
+              <li key={version.id} className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-[12.5px] font-medium text-ink-title">{index === 0 ? "현재 버전" : `버전 ${versions.length - index}`} · {version.note}</p>
+                  <p className="text-[10.5px] text-ink-body">{version.savedAt}</p>
+                </div>
+                {index !== 0 && (
+                  <button onClick={() => { pushHistory(); applyState(version.state); }} className="shrink-0 rounded-lg bg-[#F3F4F6] px-2.5 py-1 text-[11.5px] font-semibold text-ink-body hover:bg-primary/10 hover:text-primary">복원</button>
                 )}
-                {selected.components.map((component, index) => (
-                  <MockBlock key={component + index} label={component} />
-                ))}
-              </div>
-              {isBottomTab && (
-                <div className="flex items-center justify-around border-t border-[#ECEEF2] bg-white py-1.5">
-                  {ui.screens.slice(0, 4).map((screen) => (
-                    <button key={screen.id} onClick={() => setSelectedId(screen.id)} className="flex flex-col items-center gap-0.5 px-1">
-                      <span className={"h-4 w-4 rounded " + (screen.id === selected.id ? "bg-primary" : "bg-[#D1D5DB]")} aria-hidden="true" />
-                      <span className={"max-w-[52px] truncate text-[8.5px] " + (screen.id === selected.id ? "font-semibold text-primary" : "text-[#9CA3AF]")}>{screen.name}</span>
-                    </button>
-                  ))}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <button onClick={handleConfirmDesign} className="flex h-[48px] w-full items-center justify-center rounded-2xl bg-[#16A34A] text-[14px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(22,163,74,0.45)] transition-transform hover:scale-[1.01]">
+        디자인 완료
+      </button>
+    </div>
+  );
+
+  const TAB_ITEMS: { id: EditorTab; label: string }[] = [
+    { id: "preview", label: "미리보기" },
+    { id: "element", label: "요소 편집" },
+    { id: "ai", label: "AI 빠른 수정" },
+  ];
+  const tabIndex = TAB_ITEMS.findIndex((t) => t.id === tab);
+
+  return (
+    <main className="flex flex-1 flex-col px-5 pt-4 pb-[140px] animate-fadeIn md:items-center md:pt-6 md:pb-12">
+      <div className="flex w-full flex-col gap-4 md:max-w-[1240px]">
+        {/* 상단 바 */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="min-w-0">
+              <span className="rounded-badge bg-primary/10 px-2 py-0.5 text-[10.5px] font-bold text-primary">프로젝트</span>
+              {isTitleEdit ? (
+                <div className="mt-1 flex items-center gap-1.5">
+                  <input
+                    value={titleInput}
+                    onChange={(e) => setTitleInput(e.target.value)}
+                    className="h-9 w-[180px] rounded-xl border border-primary/40 bg-white px-3 text-base font-bold text-ink-title focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                  <button onClick={handleSaveTitle} aria-label="저장" className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-white"><Check className="h-4 w-4" /></button>
+                  <button onClick={() => setIsTitleEdit(false)} aria-label="취소" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E5E8EB] text-ink-body"><XIcon className="h-4 w-4" /></button>
+                </div>
+              ) : (
+                <div className="mt-0.5 flex items-center gap-1.5">
+                  <h1 className="truncate text-[20px] font-bold text-ink-title">{prd.title}</h1>
+                  <button onClick={() => { setTitleInput(prd.title); setIsTitleEdit(true); }} aria-label="브랜드명 수정" className="text-ink-body hover:text-primary">
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               )}
             </div>
           </div>
-
-          {/* 오른쪽: AI 설명 + 수정 요청 */}
-          <div className="flex flex-col gap-3 md:w-[300px] md:shrink-0">
-            <section className="rounded-2xl border border-[#ECEEF2] bg-white p-4">
-              <h2 className="text-[13px] font-bold text-ink-title">AI 설명</h2>
-              <p className="mt-1.5 text-[13px] leading-relaxed text-ink-body">{selected.description || "-"}</p>
-              {selected.components.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {selected.components.map((component, index) => (
-                    <span key={component + index} className="rounded-badge bg-[#F3F4F6] px-2 py-0.5 text-[10.5px] font-medium text-ink-body">
-                      {component}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-2xl border border-primary/25 bg-primary/5 p-4">
-              <h2 className="flex items-center gap-1.5 text-[13px] font-bold text-primary">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-                  <path d="M12 2l1.9 5.5L19.5 9l-5.6 1.5L12 16l-1.9-5.5L4.5 9l5.6-1.5L12 2z" />
-                </svg>
-                AI로 수정하기
-              </h2>
-              <textarea
-                value={instruction}
-                onChange={(e) => setInstruction(e.target.value)}
-                placeholder="예: 홈에 차트 추가 / 검색창 제거 / 채팅 화면 추가 / 토스 느낌으로"
-                className="mt-2 min-h-[80px] w-full resize-none rounded-xl border border-[#E5E8EB] bg-white px-3 py-2.5 text-base leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-              <button
-                onClick={handleModify}
-                disabled={instruction.trim().length === 0}
-                className="mt-2 flex h-[42px] w-full items-center justify-center rounded-xl bg-primary text-[13px] font-semibold text-white transition-all duration-200 enabled:hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                AI 수정 요청
-              </button>
-            </section>
-
-            <button
-              onClick={() => navigate("/project/summary")}
-              className="flex h-[44px] w-full items-center justify-center rounded-xl border border-[#E5E8EB] bg-white text-[13px] font-semibold text-ink-body transition-colors duration-200 hover:border-[#D1D5DB] hover:text-ink-title"
-            >
-              기획서로 돌아가기
+          <div className="flex items-center gap-2">
+            <span className="hidden text-[12px] font-medium text-ink-body sm:block">{savedNotice}</span>
+            <button onClick={handleUndo} aria-label="되돌리기" className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]"><Undo2 className="h-4 w-4" /></button>
+            <button onClick={handleRedo} aria-label="다시 실행" className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]"><Redo2 className="h-4 w-4" /></button>
+            <button onClick={handleConfirmDesign} className="hidden h-9 items-center justify-center rounded-xl bg-primary px-4 text-[13px] font-semibold text-white shadow-[0_4px_12px_-2px_rgba(79,107,255,0.45)] transition-transform hover:scale-[1.02] md:flex">
+              디자인 완료
             </button>
+          </div>
+        </div>
+
+        {/* AI 수정 비교 배너 */}
+        <AnimatePresence>
+          {compare && (
+            <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-primary/25 bg-primary/5 px-4 py-3">
+              <p className="text-[13px] font-medium text-ink-title">AI 수정이 적용되었습니다. 이전 디자인으로 되돌릴 수 있어요.</p>
+              <div className="flex gap-2">
+                <button onClick={handleRevertCompare} className="h-8 rounded-lg border border-[#E5E8EB] bg-white px-3 text-[12px] font-semibold text-ink-body hover:border-[#D1D5DB]">되돌리기</button>
+                <button onClick={() => setCompare(null)} className="h-8 rounded-lg bg-primary px-3 text-[12px] font-semibold text-white">적용하기</button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* 모바일: 3탭 슬라이드 */}
+        <div className="md:hidden">
+          <div className="flex gap-1 rounded-2xl bg-[#F3F4F6] p-1" role="tablist" aria-label="편집기 화면">
+            {TAB_ITEMS.map((item) => (
+              <button key={item.id} role="tab" aria-selected={tab === item.id} onClick={() => setTab(item.id)} className={cn("relative flex-1 rounded-xl py-2.5 text-[13px] font-semibold transition-colors", tab === item.id ? "text-primary" : "text-ink-body")}>
+                {tab === item.id && <motion.span layoutId="editor-tab" className="absolute inset-0 rounded-xl bg-white shadow-sm" transition={{ type: "spring", bounce: 0.2, duration: 0.4 }} />}
+                <span className="relative">{item.label}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4 overflow-hidden">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={tab}
+                initial={{ opacity: 0, x: 32 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -32 }}
+                transition={{ duration: 0.22, ease: "easeOut" }}
+                drag="x"
+                dragConstraints={{ left: 0, right: 0 }}
+                dragElastic={0.12}
+                onDragEnd={(_, info) => {
+                  if (info.offset.x < -70 && tabIndex < TAB_ITEMS.length - 1) setTab(TAB_ITEMS[tabIndex + 1].id);
+                  if (info.offset.x > 70 && tabIndex > 0) setTab(TAB_ITEMS[tabIndex - 1].id);
+                }}
+              >
+                {tab === "preview" && (
+                  <div className="flex flex-col gap-4">
+                    <div className="flex justify-center">{phonePreview}</div>
+                    {screenListPanel}
+                  </div>
+                )}
+                {tab === "element" && elementPanel}
+                {tab === "ai" && aiPanel}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </div>
+
+        {/* 데스크톱: 3단 레이아웃 */}
+        <div className="hidden gap-4 md:flex md:items-start">
+          <nav className="w-[220px] shrink-0" aria-label="화면 목록">{screenListPanel}</nav>
+          <div className="flex flex-1 justify-center pt-2">{phonePreview}</div>
+          <div className="flex w-[320px] shrink-0 flex-col gap-3">
+            {elementPanel}
+            {aiPanel}
           </div>
         </div>
       </div>
