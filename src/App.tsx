@@ -786,6 +786,35 @@ async function fetchIdeaSuggestions(discovery: Record<string, string>): Promise<
   return data.ideas;
 }
 
+async function fetchQuestionOptionsOnce(idea: string, field: string, question: string): Promise<string[]> {
+  const response = await fetch("/api/interview/recommend", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "question-options", idea, field, question }),
+  });
+  if (!response.ok) throw new Error(`API error: ${response.status}`);
+  const data = (await response.json()) as { success: boolean; options?: string[]; error?: string };
+  if (!data.success || !data.options || data.options.length < 2) throw new Error(data.error ?? "선택지 생성 실패");
+  return data.options;
+}
+
+// AI가 일시적으로 못 불러오는 경우가 있어, 최대 3번까지 자동 재시도한다
+async function fetchQuestionOptions(idea: string, field: string, question: string, retries = 2): Promise<string[]> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fetchQuestionOptionsOnce(idea, field, question);
+    } catch (error) {
+      lastError = error;
+      if (attempt < retries) {
+        // 점점 간격을 늘려 재시도 (0.6s, 1.2s)
+        await new Promise((resolve) => setTimeout(resolve, 600 * (attempt + 1)));
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("선택지 생성 실패");
+}
+
 const FALLBACK_IDEAS = ["AI 식단 관리 앱", "예약관리 시스템", "AI 운동 기록 앱", "AI 가계부", "AI 독서 관리 앱"];
 
 /* ---------- Mock AI Recommendation Engine ----------
@@ -1704,6 +1733,11 @@ function InterviewPage() {
   // 질문 단계는 URL(?q=번호)에서 읽는다 → 브라우저 뒤로가기가 이전 질문으로 이동
   const qParam = searchParams.get("q");
   const stepIndex = qParam !== null ? Math.min(Math.max(0, Number(qParam) || 0), INTERVIEW_STEPS.length - 1) : initial.step - 1;
+  // 질문별 AI 선택지 캐시 (field 기준). 로딩 전에는 기본 선택지 사용
+  const [dynamicOptions, setDynamicOptions] = useState<Record<string, string[]>>({});
+  const [optionsLoadingField, setOptionsLoadingField] = useState<string | null>(null);
+  const [optionsFailedField, setOptionsFailedField] = useState<string | null>(null);
+  const [optionsRetryKey, setOptionsRetryKey] = useState(0);
   const [answers, setAnswers] = useState<InterviewAnswers>(initial.answers);
   const [showHelp, setShowHelp] = useState(false);
   const [recommendation, setRecommendation] = useState<AIRecommendation | null>(null);
@@ -1714,6 +1748,34 @@ function InterviewPage() {
   const isLastStep = stepIndex === INTERVIEW_STEPS.length - 1;
   const value = answers[step.field];
   const isNextDisabled = step.required && value.trim().length === 0;
+
+  // 현재 질문에 쓸 선택지: AI 생성분이 있으면 그것, 없으면 기본 선택지
+  const currentOptions = step.type === "choice" ? dynamicOptions[step.field] ?? step.options ?? [] : [];
+
+  // 선택형 질문에 도달하면 프로젝트에 맞는 선택지를 AI로 생성 (자동 재시도 포함)
+  useEffect(() => {
+    if (step.type !== "choice" || phase !== "questions") return;
+    if (dynamicOptions[step.field] || optionsLoadingField === step.field) return;
+    if (idea.trim().length === 0) return;
+    let cancelled = false;
+    (async () => {
+      setOptionsLoadingField(step.field);
+      setOptionsFailedField((prev) => (prev === step.field ? null : prev));
+      try {
+        const opts = await fetchQuestionOptions(idea, step.field, step.question);
+        if (!cancelled) setDynamicOptions((prev) => ({ ...prev, [step.field]: opts }));
+      } catch {
+        // 자동 재시도까지 실패하면 실패 상태 표시 → 사용자가 직접 다시 시도 가능
+        if (!cancelled) setOptionsFailedField(step.field);
+      } finally {
+        if (!cancelled) setOptionsLoadingField((prev) => (prev === step.field ? null : prev));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step.field, step.type, phase, idea, optionsRetryKey]);
 
   const setValue = (v: string) => setAnswers((prev) => ({ ...prev, [step.field]: v }));
 
@@ -1782,8 +1844,8 @@ function InterviewPage() {
     if (!recommendation) return;
 
     let valueToApply = recommendation.applyValue;
-    if (step.type === "choice" && step.options && !step.options.includes(valueToApply)) {
-      const matched = step.options.find(
+    if (step.type === "choice" && currentOptions.length > 0 && !currentOptions.includes(valueToApply)) {
+      const matched = currentOptions.find(
         (option) => valueToApply.includes(option) || recommendation.answer.includes(option)
       );
       if (matched) valueToApply = matched;
@@ -2045,24 +2107,49 @@ function InterviewPage() {
               className="mt-4 min-h-[110px] w-full resize-none rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-base leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           ) : (
-            <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-              {step.options?.map((option) => {
-                const isSelected = value === option;
-                return (
+            <div className="mt-4">
+              {optionsLoadingField === step.field && !dynamicOptions[step.field] ? (
+                // 선택지 생성 중
+                <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-[#E5E8EB] py-10">
+                  <span className="h-6 w-6 animate-spin rounded-full border-2 border-primary/30 border-t-primary" aria-hidden="true" />
+                  <p className="text-[13px] font-medium text-ink-body">이 서비스에 맞는 선택지를 준비하고 있어요...</p>
+                </div>
+              ) : (
+              <>
+              {optionsFailedField === step.field && !dynamicOptions[step.field] && (
+                // 자동 재시도까지 실패 → 다시 시도 버튼 + 아래에 기본 선택지 제공 (막히지 않게)
+                <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-[#FDE68A] bg-[#FEF9C3] px-3.5 py-2.5">
+                  <p className="text-[12.5px] font-medium text-[#92400E]">맞춤 선택지를 못 불러왔어요. 아래 기본 선택지를 쓰거나 다시 시도해보세요.</p>
                   <button
-                    key={option}
-                    onClick={() => setValue(option)}
-                    className={
-                      "flex items-center justify-center rounded-2xl border px-4 py-3.5 text-[15px] font-medium transition-colors duration-200 " +
-                      (isSelected
-                        ? "border-primary bg-primary/5 text-primary"
-                        : "border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]")
-                    }
+                    onClick={() => { setOptionsFailedField(null); setOptionsRetryKey((k) => k + 1); }}
+                    className="flex h-8 shrink-0 items-center gap-1 rounded-lg bg-[#92400E] px-2.5 text-[12px] font-semibold text-white"
                   >
-                    {option}
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    다시 시도
                   </button>
-                );
-              })}
+                </div>
+              )}
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                {currentOptions.map((option) => {
+                  const isSelected = value === option;
+                  return (
+                    <button
+                      key={option}
+                      onClick={() => setValue(option)}
+                      className={
+                        "flex items-center justify-center rounded-2xl border px-4 py-3.5 text-center text-[15px] font-medium transition-colors duration-200 " +
+                        (isSelected
+                          ? "border-primary bg-primary/5 text-primary"
+                          : "border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]")
+                      }
+                    >
+                      {option}
+                    </button>
+                  );
+                })}
+              </div>
+              </>
+              )}
             </div>
           )}
 
