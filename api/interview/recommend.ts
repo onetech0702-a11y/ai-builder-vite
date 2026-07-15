@@ -20,8 +20,9 @@ interface RecommendRequestBody {
   question?: string;
   options?: string[];
   answers?: RecommendAnswers;
-  mode?: "brand-names" | "idea-suggestions";
+  mode?: "brand-names" | "idea-suggestions" | "idea-discovery" | "question-options";
   discovery?: Record<string, string>;
+  field?: string;
 }
 
 interface ApiRequest {
@@ -107,10 +108,52 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return;
   }
 
-  const { idea = "", currentStep = 1, question = "", options, answers = {}, mode, discovery } = req.body ?? {};
+  const { idea = "", currentStep = 1, question = "", options, answers = {}, mode, discovery, field } = req.body ?? {};
+
+  // 특수 모드: 질문 선택지 생성
+  if (mode === "question-options") {
+    const optKey = process.env.ANTHROPIC_API_KEY;
+    if (!optKey) {
+      res.status(500).json({ success: false, error: "ANTHROPIC_API_KEY is not configured" });
+      return;
+    }
+    try {
+      const optResp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": optKey, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5",
+          max_tokens: 400,
+          temperature: 0.3,
+          system: '당신은 서비스 기획 인터뷰의 선택지를 만드는 도우미입니다. 주어진 프로젝트 아이디어와 질문에 맞는 현실적인 선택지 3~4개를 만드세요. 선택지는 그 질문과 프로젝트에 실제로 어울려야 합니다. 각 선택지는 12자 이내로 짧고 명확하게. 마지막에 애매할 때 고를 수 있는 선택지("잘 모르겠습니다" 등)를 1개 포함하세요. 반드시 JSON으로만 응답하세요: {"options":["선택지1","선택지2","선택지3","잘 모르겠습니다"]} 완전하고 올바른 한국어만 사용하세요.',
+          messages: [{ role: "user", content: JSON.stringify({ idea, field: field ?? "", question }) }],
+        }),
+      });
+      if (!optResp.ok) {
+        res.status(502).json({ success: false, error: `AI API error: ${optResp.status}` });
+        return;
+      }
+      const od = (await optResp.json()) as { content?: { type: string; text?: string }[] };
+      const oraw = (od.content ?? []).map((b) => (b.type === "text" ? b.text ?? "" : "")).join("").replace(/```json|```/g, "").trim();
+      const ofb = oraw.indexOf("{");
+      const olb = oraw.lastIndexOf("}");
+      const oparsed = JSON.parse(oraw.slice(ofb, olb + 1)) as { options?: unknown };
+      const olist = Array.isArray(oparsed.options)
+        ? oparsed.options.filter((v): v is string => typeof v === "string").map(cleanText).filter((v) => v.length > 0).slice(0, 4)
+        : [];
+      if (olist.length < 2) {
+        res.status(502).json({ success: false, error: "선택지를 생성하지 못했습니다." });
+        return;
+      }
+      res.status(200).json({ success: true, options: olist });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error instanceof Error ? error.message : "Unknown error" });
+    }
+    return;
+  }
 
   // 특수 모드: 브랜드명 추천 / 아이디어 추천
-  if (mode === "brand-names" || mode === "idea-suggestions") {
+  if (mode === "brand-names" || mode === "idea-suggestions" || mode === "idea-discovery") {
     const apiKeySpecial = process.env.ANTHROPIC_API_KEY;
     if (!apiKeySpecial) {
       res.status(500).json({ success: false, error: "ANTHROPIC_API_KEY is not configured" });
@@ -119,7 +162,23 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const isBrand = mode === "brand-names";
     const systemSpecial = isBrand
       ? `당신은 브랜드 네이밍 전문가입니다. 주어진 서비스 아이디어에 어울리는 브랜드명 5개를 제안하세요. 짧고 기억하기 쉬운 이름(영문 또는 한글)으로 만드세요. 반드시 JSON으로만 응답하세요: {"names":["이름1","이름2","이름3","이름4","이름5"]}`
-      : `당신은 IT 서비스 기획자입니다. 사용자의 관심사와 답변을 기반으로 만들 만한 웹/앱 서비스 아이디어 5개를 제안하세요. 각 아이디어는 15자 이내의 짧은 서비스명 형태(예: AI 식단 관리, 예약관리 시스템)로 작성하세요. 불법이거나 유해한 아이디어는 금지합니다. 반드시 JSON으로만 응답하세요: {"ideas":["아이디어1","아이디어2","아이디어3","아이디어4","아이디어5"]}`;
+      : `당신은 IT 서비스 기획자입니다. 사용자가 인터뷰에서 답한 내용을 기반으로, 사용자가 실제로 만들고 싶어하는 것에 맞는 웹/앱 서비스 아이디어 5개를 제안하세요.
+
+입력으로 다음 정보가 주어집니다:
+- category: 관심 분야
+- who: 사용할 대상
+- problem: 해결하고 싶은 문제 (가장 중요! 사용자가 직접 쓴 내용)
+- revenue: 수익화 희망 여부
+- platform: 웹/앱 선호
+
+가장 중요한 규칙:
+- problem 필드에 사용자가 쓴 내용이 있으면, 그 내용을 반드시 최우선으로 반영하세요. 예를 들어 problem이 "자동으로 엑셀 작업하는 걸 만들고 싶어"라면, 엑셀 자동화/문서 자동화와 직접 관련된 아이디어(예: 엑셀 자동 정리 도구, 반복 업무 자동화 앱, 보고서 자동 생성기)를 제안해야 합니다.
+- category나 다른 분야로 엉뚱하게 확장하지 마세요. 사용자가 쓴 problem에서 벗어나지 마세요.
+- 각 아이디어는 15자 이내의 짧은 서비스명 형태로 작성하세요.
+- 5개 아이디어는 서로 다른 각도여야 하지만 모두 사용자의 problem과 연결되어야 합니다.
+- 불법이거나 유해한 아이디어는 금지합니다.
+
+반드시 JSON으로만 응답하세요: {"ideas":["아이디어1","아이디어2","아이디어3","아이디어4","아이디어5"]}`;
     try {
       const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -129,7 +188,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           max_tokens: 500,
           temperature: 0.8,
           system: systemSpecial,
-          messages: [{ role: "user", content: JSON.stringify(isBrand ? { idea } : { discovery: discovery ?? {} }) }],
+          messages: [{
+            role: "user",
+            content: JSON.stringify(
+              isBrand
+                ? { idea }
+                : {
+                    category: discovery?.category ?? "",
+                    who: discovery?.who ?? "",
+                    problem: discovery?.problem ?? "",
+                    revenue: discovery?.revenue ?? "",
+                    platform: discovery?.platform ?? "",
+                  }
+            ),
+          }],
         }),
       });
       if (!aiResp.ok) {
