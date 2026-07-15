@@ -306,7 +306,7 @@ function HomePage() {
     } catch {
       // 무시
     }
-    navigate("/project/interview");
+    navigate("/project/analyze");
   };
 
   // 아이디어가 없는 사용자: AI가 아이디어를 함께 찾는 인터뷰로 시작
@@ -961,6 +961,568 @@ function loadInterviewState(): { step: number; answers: InterviewAnswers } {
   const step = Math.min(Math.max(savedStep, 1), INTERVIEW_STEPS.length);
   return { step, answers: { ...EMPTY_ANSWERS, ...savedAnswers } };
 }
+
+/* ---------- AI 프로젝트 분석 (Phase 4-1) ---------- */
+
+interface FeatureItem {
+  name: string;
+  description: string;
+  recommended: boolean;
+}
+
+interface ServiceItem {
+  name: string;
+  role: string;
+  recommended: boolean;
+}
+
+interface HardwareInfo {
+  needed: boolean;
+  items: string[];
+  questions: string[];
+  limitation: string;
+}
+
+interface Feasibility {
+  score: number;
+  possible: string[];
+  needsMore: string[];
+  limitation: string;
+}
+
+interface MvpInfo {
+  screenCount: number;
+  featureCount: number;
+  difficulty: number;
+  recommendation: string;
+  items: string[];
+}
+
+interface ProjectAnalysis {
+  category: string;
+  categoryReason: string;
+  features: FeatureItem[];
+  services: ServiceItem[];
+  hardware: HardwareInfo;
+  feasibility: Feasibility;
+  mvp: MvpInfo;
+}
+
+// 사용자가 확정한 분석 결과
+interface AnalysisChoice {
+  category: string;
+  features: string[];
+  services: string[];
+  hardwareAnswers: Record<string, string>;
+  mvpMode: "recommended" | "full" | "custom";
+  mvpItems: string[];
+  connections: string[];
+}
+
+const CATEGORY_OPTIONS = [
+  "웹 서비스", "모바일 앱", "게임", "AI 서비스", "ERP", "CRM",
+  "예약", "쇼핑몰", "IoT", "자동화", "SaaS", "관리 시스템", "기타",
+];
+
+async function fetchAnalyze(idea: string): Promise<ProjectAnalysis> {
+  const response = await fetch("/api/project/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ idea }),
+  });
+  if (!response.ok) throw new Error(`API error: ${response.status}`);
+  const data = (await response.json()) as { success: boolean; analysis?: ProjectAnalysis; error?: string };
+  if (!data.success || !data.analysis) throw new Error(data.error ?? "분석 실패");
+  return data.analysis;
+}
+
+function loadSavedAnalysis(): { analysis: ProjectAnalysis | null; choice: AnalysisChoice | null } {
+  const project = loadCurrentProject();
+  const analysis =
+    typeof project.analysis === "object" && project.analysis !== null ? (project.analysis as ProjectAnalysis) : null;
+  const choice =
+    typeof project.analysisChoice === "object" && project.analysisChoice !== null
+      ? (project.analysisChoice as AnalysisChoice)
+      : null;
+  return { analysis, choice };
+}
+
+function Stars({ count, max = 5 }: { count: number; max?: number }) {
+  return (
+    <span className="text-[14px] tracking-tight text-[#F59E0B]" aria-label={`${count}점 (5점 만점)`}>
+      {"★".repeat(Math.min(max, count))}
+      <span className="text-[#E5E8EB]">{"★".repeat(Math.max(0, max - count))}</span>
+    </span>
+  );
+}
+
+const ANALYZE_STEPS = ["서비스 분석", "기술 분석", "외부 서비스", "장비 분석", "구현 가능 여부", "MVP 추천"];
+
+type AnalyzeStatus = "loading" | "ready" | "error";
+
+/* ---------- 페이지: AI 프로젝트 분석 ---------- */
+
+function AnalyzePage() {
+  const navigate = useNavigate();
+  const [idea] = useState(() => loadCurrentIdea());
+  const saved = loadSavedAnalysis();
+
+  const [analysis, setAnalysis] = useState<ProjectAnalysis | null>(saved.analysis);
+  const [status, setStatus] = useState<AnalyzeStatus>(saved.analysis ? "ready" : "loading");
+  const [stepIndex, setStepIndex] = useState(0);
+
+  const [category, setCategory] = useState(saved.choice?.category ?? "");
+  const [isCategoryEdit, setIsCategoryEdit] = useState(false);
+  const [checkedFeatures, setCheckedFeatures] = useState<string[]>(saved.choice?.features ?? []);
+  const [extraFeature, setExtraFeature] = useState("");
+  const [checkedServices, setCheckedServices] = useState<string[]>(saved.choice?.services ?? []);
+  const [hardwareAnswers, setHardwareAnswers] = useState<Record<string, string>>(saved.choice?.hardwareAnswers ?? {});
+  const [mvpMode, setMvpMode] = useState<AnalysisChoice["mvpMode"]>(saved.choice?.mvpMode ?? "recommended");
+  const [customMvp, setCustomMvp] = useState<string[]>(saved.choice?.mvpItems ?? []);
+
+  // 아이디어가 없으면 인터뷰(아이디어 발굴)로 보냄
+  useEffect(() => {
+    if (idea.trim().length === 0) navigate("/project/interview", { replace: true });
+  }, [idea, navigate]);
+
+  useEffect(() => {
+    if (analysis || status !== "loading" || idea.trim().length === 0) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const result = await fetchAnalyze(idea);
+        if (cancelled) return;
+        setAnalysis(result);
+        setCategory((prev) => prev || result.category);
+        setCheckedFeatures((prev) => (prev.length > 0 ? prev : result.features.filter((f) => f.recommended).map((f) => f.name)));
+        setCheckedServices((prev) => (prev.length > 0 ? prev : result.services.filter((s) => s.recommended).map((s) => s.name)));
+        setCustomMvp((prev) => (prev.length > 0 ? prev : result.mvp.items));
+        updateCurrentProject({ analysis: result });
+        setStatus("ready");
+      } catch {
+        if (!cancelled) setStatus("error");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [analysis, status, idea]);
+
+  const toggle = (list: string[], setList: (next: string[]) => void, value: string) => {
+    setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
+  };
+
+  if (status === "loading") {
+    return (
+      <main className="flex flex-1 flex-col items-center justify-center gap-4 px-5 pt-4 pb-[140px] animate-fadeIn md:pb-12">
+        <span className="h-10 w-10 animate-spin rounded-full border-[3px] border-primary/20 border-t-primary" aria-hidden="true" />
+        <div className="text-center">
+          <p className="text-[16px] font-semibold text-ink-title">AI가 서비스를 분석하고 있습니다.</p>
+          <p className="mt-1 text-[14px] text-ink-body">무엇이 필요한지, 무엇이 가능한지 살펴보는 중입니다. (예상 5~15초)</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (status === "error" || !analysis) {
+    return (
+      <main className="flex flex-1 flex-col items-center justify-center gap-4 px-5 pt-4 pb-[140px] animate-fadeIn md:pb-12">
+        <p className="text-[16px] font-semibold text-ink-title">분석 실패</p>
+        <p className="text-[14px] text-ink-body">잠시 후 다시 시도해주세요.</p>
+        <button onClick={() => setStatus("loading")} className="flex h-[48px] w-full max-w-[280px] items-center justify-center rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)]">
+          다시 시도
+        </button>
+      </main>
+    );
+  }
+
+  const hardwareNeeded = analysis.hardware.needed && analysis.hardware.questions.length > 0;
+  // 장비가 필요 없으면 장비 단계는 건너뛴다
+  const visibleSteps = hardwareNeeded ? ANALYZE_STEPS : ANALYZE_STEPS.filter((s) => s !== "장비 분석");
+  const currentStep = visibleSteps[stepIndex];
+  const isLast = stepIndex === visibleSteps.length - 1;
+
+  const finalMvpItems = mvpMode === "full" ? analysis.features.map((f) => f.name) : mvpMode === "custom" ? customMvp : analysis.mvp.items;
+
+  const handleNext = () => {
+    if (!isLast) {
+      setStepIndex((prev) => prev + 1);
+      window.scrollTo(0, 0);
+      return;
+    }
+    // 분석 확정 → 인터뷰 시작
+    const choice: AnalysisChoice = {
+      category,
+      features: checkedFeatures,
+      services: checkedServices,
+      hardwareAnswers,
+      mvpMode,
+      mvpItems: finalMvpItems,
+      connections: checkedServices,
+    };
+    updateCurrentProject({ analysis, analysisChoice: choice, status: "analyzed", step: "analysis-done", progress: 15 });
+    navigate("/project/interview");
+  };
+
+  const handleBack = () => {
+    if (stepIndex === 0) {
+      navigate("/");
+      return;
+    }
+    setStepIndex((prev) => prev - 1);
+    window.scrollTo(0, 0);
+  };
+
+  return (
+    <main className="flex flex-1 flex-col px-5 pt-4 pb-[140px] animate-fadeIn md:items-center md:pt-8 md:pb-12">
+      <div className="flex w-full flex-col gap-4 md:max-w-[680px]">
+        {/* 헤더 + 진행률 */}
+        <div>
+          <span className="text-[12px] font-semibold text-primary">AI 프로젝트 분석</span>
+          <h1 className="mt-1 text-[22px] font-bold text-ink-title">{idea}</h1>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {visibleSteps.map((step, index) => (
+              <span
+                key={step}
+                className={cn(
+                  "rounded-badge px-2.5 py-1 text-[11.5px] font-medium transition-colors",
+                  index < stepIndex ? "bg-[#16A34A]/10 text-[#16A34A]" : index === stepIndex ? "bg-primary/10 font-bold text-primary" : "bg-[#F3F4F6] text-ink-body"
+                )}
+              >
+                {index < stepIndex ? "✔ " : ""}{step}
+              </span>
+            ))}
+          </div>
+          <div className="mt-3">
+            <ProgressBar progress={Math.round(((stepIndex + 1) / visibleSteps.length) * 100)} />
+          </div>
+        </div>
+
+        <AnimatePresence mode="wait">
+          <motion.section
+            key={currentStep}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            className="rounded-[24px] border border-[#ECEEF2] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:p-7"
+          >
+            {/* STEP 1: 서비스 분석 */}
+            {currentStep === "서비스 분석" && (
+              <div>
+                <h2 className="text-[17px] font-bold text-ink-title">어떤 서비스인지 확인해주세요</h2>
+                <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-body">{analysis.categoryReason}</p>
+
+                {isCategoryEdit ? (
+                  <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {CATEGORY_OPTIONS.map((option) => (
+                      <button
+                        key={option}
+                        onClick={() => { setCategory(option); setIsCategoryEdit(false); }}
+                        className={cn("rounded-xl border px-3 py-2.5 text-[13px] font-medium transition-colors", category === option ? "border-primary bg-primary/5 text-primary" : "border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]")}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-4">
+                    <div className="min-w-0">
+                      <p className="text-[11.5px] font-semibold text-primary">AI가 분류한 서비스 종류</p>
+                      <p className="mt-0.5 text-[17px] font-bold text-ink-title">{category}</p>
+                    </div>
+                    <button onClick={() => setIsCategoryEdit(true)} className="flex h-9 shrink-0 items-center gap-1 rounded-xl border border-[#E5E8EB] bg-white px-3 text-[12.5px] font-semibold text-ink-title hover:border-[#D1D5DB]">
+                      <Pencil className="h-3.5 w-3.5" /> 수정
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* STEP 2: 기술 분석 */}
+            {currentStep === "기술 분석" && (
+              <div>
+                <h2 className="text-[17px] font-bold text-ink-title">이런 기능들이 필요해요</h2>
+                <p className="mt-1.5 text-[13.5px] text-ink-body">필요 없는 기능은 체크를 해제하고, 원하는 기능은 아래에서 추가할 수 있어요.</p>
+
+                <ul className="mt-4 flex flex-col gap-2">
+                  {analysis.features.map((feature) => {
+                    const checked = checkedFeatures.includes(feature.name);
+                    return (
+                      <li key={feature.name}>
+                        <button
+                          onClick={() => toggle(checkedFeatures, setCheckedFeatures, feature.name)}
+                          className={cn("flex w-full items-start gap-3 rounded-2xl border px-4 py-3 text-left transition-colors", checked ? "border-primary/40 bg-primary/5" : "border-[#E5E8EB] bg-white hover:border-[#D1D5DB]")}
+                        >
+                          <span className={cn("mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors", checked ? "border-primary bg-primary text-white" : "border-[#D1D5DB] bg-white")}>
+                            {checked && <Check className="h-3.5 w-3.5" />}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-[14px] font-semibold text-ink-title">{feature.name}</span>
+                            {feature.description && <span className="mt-0.5 block text-[12.5px] leading-relaxed text-ink-body">{feature.description}</span>}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                  {checkedFeatures
+                    .filter((name) => !analysis.features.some((f) => f.name === name))
+                    .map((name) => (
+                      <li key={name}>
+                        <button onClick={() => toggle(checkedFeatures, setCheckedFeatures, name)} className="flex w-full items-center gap-3 rounded-2xl border border-primary/40 bg-primary/5 px-4 py-3 text-left">
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-primary bg-primary text-white"><Check className="h-3.5 w-3.5" /></span>
+                          <span className="text-[14px] font-semibold text-ink-title">{name}</span>
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+
+                <div className="mt-3 flex gap-2">
+                  <input
+                    value={extraFeature}
+                    onChange={(e) => setExtraFeature(e.target.value)}
+                    placeholder="원하는 기능 추가 (예: 출석 체크)"
+                    className="h-11 min-w-0 flex-1 rounded-xl border border-[#E5E8EB] bg-[#F8FAFC] px-3 text-base text-ink-title placeholder:text-[13px] placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                  <button
+                    onClick={() => {
+                      const name = extraFeature.trim();
+                      if (!name || checkedFeatures.includes(name)) return;
+                      setCheckedFeatures([...checkedFeatures, name]);
+                      setExtraFeature("");
+                    }}
+                    disabled={extraFeature.trim().length === 0}
+                    className="flex h-11 shrink-0 items-center gap-1 rounded-xl bg-primary px-4 text-[13px] font-semibold text-white disabled:opacity-40"
+                  >
+                    <Plus className="h-4 w-4" /> 추가
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3: 외부 서비스 */}
+            {currentStep === "외부 서비스" && (
+              <div>
+                <h2 className="text-[17px] font-bold text-ink-title">이런 도움을 받으면 좋아요</h2>
+                <p className="mt-1.5 text-[13.5px] text-ink-body">직접 만들지 않아도 되는 부분은 검증된 서비스의 도움을 받습니다. 지금 가입할 필요는 없어요.</p>
+
+                <ul className="mt-4 flex flex-col gap-2">
+                  {analysis.services.map((service) => {
+                    const checked = checkedServices.includes(service.name);
+                    return (
+                      <li key={service.name}>
+                        <button
+                          onClick={() => toggle(checkedServices, setCheckedServices, service.name)}
+                          className={cn("flex w-full items-start gap-3 rounded-2xl border px-4 py-3 text-left transition-colors", checked ? "border-primary/40 bg-primary/5" : "border-[#E5E8EB] bg-white hover:border-[#D1D5DB]")}
+                        >
+                          <span className={cn("mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors", checked ? "border-primary bg-primary text-white" : "border-[#D1D5DB] bg-white")}>
+                            {checked && <Check className="h-3.5 w-3.5" />}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-[14px] font-semibold text-ink-title">{service.name}</span>
+                            {service.role && <span className="mt-0.5 block text-[12.5px] leading-relaxed text-ink-body">{service.role}</span>}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+
+            {/* STEP 4: 장비 분석 (필요할 때만) */}
+            {currentStep === "장비 분석" && (
+              <div>
+                <h2 className="text-[17px] font-bold text-ink-title">장비에 대해 확인할게요</h2>
+                {analysis.hardware.items.length > 0 && (
+                  <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-body">
+                    이 서비스에는 <span className="font-semibold text-ink-title">{analysis.hardware.items.join(", ")}</span> 같은 실제 장비가 필요할 수 있어요.
+                  </p>
+                )}
+
+                <div className="mt-4 flex flex-col gap-3">
+                  {analysis.hardware.questions.map((question) => (
+                    <div key={question}>
+                      <p className="text-[13.5px] font-semibold text-ink-title">{question}</p>
+                      <div className="mt-1.5 flex gap-2">
+                        {["예", "아니오", "잘 모르겠어요"].map((option) => (
+                          <button
+                            key={option}
+                            onClick={() => setHardwareAnswers({ ...hardwareAnswers, [question]: option })}
+                            className={cn("flex-1 rounded-xl border px-3 py-2.5 text-[13px] font-medium transition-colors", hardwareAnswers[question] === option ? "border-primary bg-primary/5 text-primary" : "border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]")}
+                          >
+                            {option}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {analysis.hardware.limitation && (
+                  <p className="mt-4 rounded-2xl bg-[#FEF3C7] px-4 py-3 text-[12.5px] leading-relaxed text-[#92400E]">{analysis.hardware.limitation}</p>
+                )}
+              </div>
+            )}
+
+            {/* STEP 5: 구현 가능 여부 */}
+            {currentStep === "구현 가능 여부" && (
+              <div>
+                <h2 className="text-[17px] font-bold text-ink-title">어디까지 만들 수 있을까요?</h2>
+
+                <div className="mt-4 rounded-2xl border border-primary/30 bg-primary/5 px-5 py-4 text-center">
+                  <p className="text-[12px] font-semibold text-primary">AI Builder로 바로 만들 수 있는 범위</p>
+                  <p className="mt-1 text-[32px] font-bold leading-tight text-ink-title">{analysis.feasibility.score}%</p>
+                  <Stars count={Math.max(1, Math.round(analysis.feasibility.score / 20))} />
+                </div>
+
+                {analysis.feasibility.possible.length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-[13px] font-bold text-ink-title">지금 바로 만들 수 있어요</p>
+                    <ul className="mt-1.5 flex flex-col gap-1.5">
+                      {analysis.feasibility.possible.map((item) => (
+                        <li key={item} className="flex items-start gap-2 text-[13.5px] leading-relaxed text-ink-title">
+                          <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#16A34A]" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {analysis.feasibility.needsMore.length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-[13px] font-bold text-ink-title">추가로 준비하면 좋아요</p>
+                    <ul className="mt-1.5 flex flex-col gap-1.5">
+                      {analysis.feasibility.needsMore.map((item) => (
+                        <li key={item} className="flex items-start gap-2 text-[13.5px] leading-relaxed text-ink-body">
+                          <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-primary" aria-hidden="true" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {analysis.feasibility.limitation && (
+                  <div className="mt-4 rounded-2xl bg-[#FEF3C7] px-4 py-3.5">
+                    <p className="text-[12.5px] font-bold text-[#92400E]">솔직하게 말씀드릴게요</p>
+                    <p className="mt-1 text-[12.5px] leading-relaxed text-[#92400E]">{analysis.feasibility.limitation}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* STEP 6: MVP 추천 */}
+            {currentStep === "MVP 추천" && (
+              <div>
+                <h2 className="text-[17px] font-bold text-ink-title">먼저 이만큼만 만들어볼까요?</h2>
+
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  {[
+                    { label: "예상 화면", value: `${analysis.mvp.screenCount}개` },
+                    { label: "예상 기능", value: `${analysis.mvp.featureCount}개` },
+                    { label: "예상 난이도", value: "" },
+                  ].map((item) => (
+                    <div key={item.label} className="rounded-2xl bg-[#F8FAFC] px-3 py-3 text-center">
+                      <p className="text-[11px] font-medium text-ink-body">{item.label}</p>
+                      {item.value ? (
+                        <p className="mt-0.5 text-[16px] font-bold text-ink-title">{item.value}</p>
+                      ) : (
+                        <p className="mt-1"><Stars count={analysis.mvp.difficulty} /></p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {analysis.mvp.recommendation && (
+                  <p className="mt-4 rounded-2xl border border-primary/25 bg-primary/5 px-4 py-3 text-[13px] leading-relaxed text-ink-title">
+                    {analysis.mvp.recommendation}
+                  </p>
+                )}
+
+                <p className="mt-4 text-[13px] font-bold text-ink-title">어떻게 진행할까요?</p>
+                <div className="mt-2 flex flex-col gap-2">
+                  {([
+                    { id: "recommended", title: "추천대로 진행", desc: "가장 빠르게 서비스를 실행해볼 수 있어요." },
+                    { id: "full", title: "전체 기능 진행", desc: "시간이 더 걸리지만 모든 기능을 담습니다." },
+                    { id: "custom", title: "직접 선택", desc: "필요한 기능만 골라서 만듭니다." },
+                  ] as const).map((option) => (
+                    <button
+                      key={option.id}
+                      onClick={() => setMvpMode(option.id)}
+                      className={cn("rounded-2xl border px-4 py-3 text-left transition-colors", mvpMode === option.id ? "border-primary bg-primary/5" : "border-[#E5E8EB] bg-white hover:border-[#D1D5DB]")}
+                    >
+                      <p className={cn("text-[14px] font-semibold", mvpMode === option.id ? "text-primary" : "text-ink-title")}>{option.title}</p>
+                      <p className="mt-0.5 text-[12.5px] text-ink-body">{option.desc}</p>
+                    </button>
+                  ))}
+                </div>
+
+                {mvpMode === "custom" ? (
+                  <div className="mt-3">
+                    <p className="text-[12.5px] font-semibold text-ink-body">넣을 기능을 골라주세요</p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {checkedFeatures.map((name) => {
+                        const on = customMvp.includes(name);
+                        return (
+                          <button
+                            key={name}
+                            onClick={() => toggle(customMvp, setCustomMvp, name)}
+                            className={cn("rounded-badge px-3 py-1.5 text-[12.5px] font-medium transition-colors", on ? "bg-primary text-white" : "bg-[#F3F4F6] text-ink-body hover:bg-[#ECEEF2]")}
+                          >
+                            {name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-2xl bg-[#F8FAFC] px-4 py-3">
+                    <p className="text-[12px] font-semibold text-ink-body">{mvpMode === "full" ? "전체 기능" : "MVP 구성"}</p>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {finalMvpItems.map((item) => (
+                        <span key={item} className="rounded-badge bg-white px-2.5 py-1 text-[12px] font-medium text-ink-title">{item}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {checkedServices.length > 0 && (
+                  <div className="mt-4 rounded-2xl border border-[#ECEEF2] px-4 py-3">
+                    <p className="text-[12.5px] font-bold text-ink-title">나중에 연결할 목록</p>
+                    <ul className="mt-1.5 flex flex-col gap-1">
+                      {checkedServices.map((service) => (
+                        <li key={service} className="flex items-center gap-2 text-[12.5px] text-ink-body">
+                          <span className="h-3 w-3 rounded-[3px] border border-[#D1D5DB]" aria-hidden="true" />
+                          {service}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-2 text-[11.5px] text-ink-body">지금은 목록만 만들어둡니다. 필요한 순간에 안내해드릴게요.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </motion.section>
+        </AnimatePresence>
+
+        {/* 하단 버튼 */}
+        <div className="flex gap-2.5">
+          <button onClick={handleBack} className="flex h-[52px] flex-1 items-center justify-center rounded-2xl border border-[#E5E8EB] bg-white text-[14px] font-semibold text-ink-body transition-colors hover:border-[#D1D5DB] hover:text-ink-title">
+            이전
+          </button>
+          <button onClick={handleNext} className="flex h-[52px] flex-[2] items-center justify-center rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)] transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]">
+            {isLast ? "이대로 시작하기" : "다음"}
+          </button>
+        </div>
+      </div>
+    </main>
+  );
+}
+
 
 type InterviewPhase = "discover" | "brand" | "questions";
 
@@ -3240,6 +3802,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/project/create" element={<ProjectCreatePage />} />
+          <Route path="/project/analyze" element={<AnalyzePage />} />
           <Route path="/project/interview" element={<InterviewPage />} />
           <Route path="/project/summary" element={<SummaryPage />} />
           <Route path="/project/mockup" element={<MockupPage />} />
