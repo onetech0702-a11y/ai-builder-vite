@@ -774,7 +774,7 @@ async function fetchBrandNames(idea: string): Promise<string[]> {
   return data.names;
 }
 
-async function fetchIdeaSuggestions(discovery: Record<string, string>): Promise<string[]> {
+async function fetchIdeaSuggestionsOnce(discovery: Record<string, string>): Promise<string[]> {
   const response = await fetch("/api/interview/recommend", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -784,6 +784,20 @@ async function fetchIdeaSuggestions(discovery: Record<string, string>): Promise<
   const data = (await response.json()) as { success: boolean; ideas?: string[]; error?: string };
   if (!data.success || !data.ideas || data.ideas.length === 0) throw new Error(data.error ?? "아이디어 추천 실패");
   return data.ideas;
+}
+
+// AI가 일시적으로 못 불러오는 경우가 있어 최대 3번까지 자동 재시도한다
+async function fetchIdeaSuggestions(discovery: Record<string, string>, retries = 2): Promise<string[]> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fetchIdeaSuggestionsOnce(discovery);
+    } catch (error) {
+      lastError = error;
+      if (attempt < retries) await new Promise((resolve) => setTimeout(resolve, 600 * (attempt + 1)));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("아이디어 추천 실패");
 }
 
 async function fetchQuestionOptionsOnce(idea: string, field: string, question: string): Promise<string[]> {
@@ -815,6 +829,17 @@ async function fetchQuestionOptions(idea: string, field: string, question: strin
   throw lastError instanceof Error ? lastError : new Error("선택지 생성 실패");
 }
 
+const FALLBACK_IDEAS_BY_CATEGORY: Record<string, string[]> = {
+  음식: ["AI 식단 관리 앱", "맛집 기록 지도", "냉장고 재료 레시피 추천", "다이어트 식단 코치", "동네 배달 모아보기"],
+  운동: ["AI 운동 기록 앱", "홈트 루틴 추천", "러닝 코스 기록", "PT 예약 관리", "체중 변화 트래커"],
+  여행: ["AI 여행 일정 추천", "여행 경비 정산 앱", "가볼 곳 위시리스트", "환율 여행 가계부", "동행 구하기 커뮤니티"],
+  금융: ["AI 가계부", "구독 관리 앱", "소액 투자 기록", "용돈 관리 앱", "지출 리포트 대시보드"],
+  병원: ["병원 예약 관리", "복약 알림 앱", "증상 기록 다이어리", "건강검진 리마인더", "반려동물 건강 수첩"],
+  쇼핑: ["최저가 비교 앱", "위시리스트 알림", "중고거래 매칭", "공동구매 모임", "쇼핑 예산 관리"],
+  교육: ["AI 단어 암기 앱", "온라인 강의 관리", "스터디 모임 매칭", "학습 시간 트래커", "자격증 일정 관리"],
+  생산성: ["할 일 관리 앱", "습관 형성 트래커", "집중 타이머", "메모 정리 앱", "목표 관리 대시보드"],
+  AI: ["AI 글쓰기 도우미", "AI 이미지 정리 앱", "AI 일정 비서", "AI 요약 노트", "AI 챗봇 상담"],
+};
 const FALLBACK_IDEAS = ["AI 식단 관리 앱", "예약관리 시스템", "AI 운동 기록 앱", "AI 가계부", "AI 독서 관리 앱"];
 
 /* ---------- Mock AI Recommendation Engine ----------
@@ -1675,6 +1700,25 @@ function InterviewPage() {
   const [dAnswers, setDAnswers] = useState<Record<string, string>>({ category: "", who: "", problem: "", revenue: "", platform: "" });
   const [ideaOptions, setIdeaOptions] = useState<string[] | null>(null);
   const [isDiscovering, setIsDiscovering] = useState(false);
+  const [ideaFromAI, setIdeaFromAI] = useState(false); // 지금 목록이 AI 생성분인지
+
+  // 아이디어 추천 실행 (최초/다시 추천 공통)
+  const runIdeaSuggest = async () => {
+    setIsDiscovering(true);
+    try {
+      const ideas = await fetchIdeaSuggestions(dAnswers);
+      setIdeaOptions(ideas);
+      setIdeaFromAI(true);
+    } catch {
+      // AI 실패 시: 관심 분야에 맞는 예비 아이디어를 섞어서 보여준다 (매번 조금씩 다르게)
+      const pool = FALLBACK_IDEAS_BY_CATEGORY[dAnswers.category] ?? FALLBACK_IDEAS;
+      const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, 5);
+      setIdeaOptions(shuffled);
+      setIdeaFromAI(false);
+    } finally {
+      setIsDiscovering(false);
+    }
+  };
 
   const handleDiscoveryNext = async () => {
     if (dStep < DISCOVERY_STEPS.length - 1) {
@@ -1682,14 +1726,7 @@ function InterviewPage() {
       window.scrollTo(0, 0);
       return;
     }
-    setIsDiscovering(true);
-    try {
-      setIdeaOptions(await fetchIdeaSuggestions(dAnswers));
-    } catch {
-      setIdeaOptions(FALLBACK_IDEAS);
-    } finally {
-      setIsDiscovering(false);
-    }
+    await runIdeaSuggest();
   };
 
   const handlePickIdea = (picked: string) => {
@@ -1891,6 +1928,11 @@ function InterviewPage() {
               <>
                 <h1 className="mt-1 text-[20px] font-bold text-ink-title">이런 서비스는 어떠세요?</h1>
                 <p className="mt-1 text-[13px] text-ink-body">마음에 드는 아이디어를 선택하면 인터뷰를 시작합니다.</p>
+                {!ideaFromAI && (
+                  <p className="mt-3 rounded-xl border border-[#FDE68A] bg-[#FEF9C3] px-3.5 py-2.5 text-[12.5px] font-medium text-[#92400E]">
+                    AI 추천을 못 불러와서 예시 아이디어를 보여드리고 있어요. 아래에서 다시 추천받아보세요.
+                  </p>
+                )}
                 <div className="mt-4 flex flex-col gap-2.5">
                   {ideaOptions.map((option, index) => (
                     <button
@@ -1903,7 +1945,14 @@ function InterviewPage() {
                     </button>
                   ))}
                 </div>
-                <button onClick={() => setIdeaOptions(null)} className="mt-4 text-[13px] font-medium text-ink-body hover:text-ink-title">
+                <button
+                  onClick={() => void runIdeaSuggest()}
+                  className="mt-3 flex h-[46px] w-full items-center justify-center gap-1.5 rounded-2xl border border-primary/30 bg-primary/5 text-[14px] font-semibold text-primary transition-colors hover:bg-primary/10"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  다른 아이디어 추천받기
+                </button>
+                <button onClick={() => { setIdeaOptions(null); setIdeaFromAI(false); }} className="mt-3 text-[13px] font-medium text-ink-body hover:text-ink-title">
                   ← 답변 다시 하기
                 </button>
               </>
