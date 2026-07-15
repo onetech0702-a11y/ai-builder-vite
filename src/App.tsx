@@ -1051,10 +1051,15 @@ interface ServiceItem {
   recommended: boolean;
 }
 
+interface HardwareQuestion {
+  question: string;
+  options: string[];
+}
+
 interface HardwareInfo {
   needed: boolean;
   items: string[];
-  questions: string[];
+  questions: HardwareQuestion[];
   limitation: string;
 }
 
@@ -1422,23 +1427,31 @@ function AnalyzePage() {
                   </p>
                 )}
 
-                <div className="mt-4 flex flex-col gap-3">
-                  {analysis.hardware.questions.map((question) => (
-                    <div key={question}>
-                      <p className="text-[13.5px] font-semibold text-ink-title">{question}</p>
-                      <div className="mt-1.5 flex gap-2">
-                        {["예", "아니오", "잘 모르겠어요"].map((option) => (
-                          <button
-                            key={option}
-                            onClick={() => setHardwareAnswers({ ...hardwareAnswers, [question]: option })}
-                            className={cn("flex-1 rounded-xl border px-3 py-2.5 text-[13px] font-medium transition-colors", hardwareAnswers[question] === option ? "border-primary bg-primary/5 text-primary" : "border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]")}
-                          >
-                            {option}
-                          </button>
-                        ))}
+                <div className="mt-4 flex flex-col gap-4">
+                  {analysis.hardware.questions.map((item) => {
+                    // 선택지가 짧고 3개 이하면 가로, 길거나 많으면 세로 배치
+                    const isWide = item.options.length <= 3 && item.options.every((o) => o.length <= 6);
+                    return (
+                      <div key={item.question}>
+                        <p className="text-[13.5px] font-semibold text-ink-title">{item.question}</p>
+                        <div className={cn("mt-1.5 gap-2", isWide ? "flex" : "grid grid-cols-1 sm:grid-cols-2")}>
+                          {item.options.map((option) => (
+                            <button
+                              key={option}
+                              onClick={() => setHardwareAnswers({ ...hardwareAnswers, [item.question]: option })}
+                              className={cn(
+                                "rounded-xl border px-3 py-2.5 text-[13px] font-medium transition-colors",
+                                isWide ? "flex-1" : "text-left",
+                                hardwareAnswers[item.question] === option ? "border-primary bg-primary/5 text-primary" : "border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]"
+                              )}
+                            >
+                              {option}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {analysis.hardware.limitation && (

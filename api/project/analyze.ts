@@ -31,10 +31,15 @@ interface ServiceItem {
   recommended: boolean;
 }
 
+interface HardwareQuestion {
+  question: string;
+  options: string[];
+}
+
 interface HardwareInfo {
   needed: boolean;
   items: string[];
-  questions: string[];
+  questions: HardwareQuestion[];
   limitation: string;
 }
 
@@ -124,7 +129,7 @@ JSON 형식:
   "hardware": {
     "needed": false,
     "items": ["필요한 장비 목록 (없으면 빈 배열)"],
-    "questions": ["장비가 필요할 때만 사용자에게 물어볼 질문 (없으면 빈 배열)"],
+    "questions": [{ "question": "장비 관련 질문 (장비가 필요할 때만, 없으면 빈 배열)", "options": ["이 질문에 맞는 선택지 2~4개"] }],
     "limitation": "장비 때문에 AI Builder만으로 못 하는 부분 (없으면 빈 문자열)"
   },
   "feasibility": {
@@ -147,6 +152,7 @@ JSON 형식:
 - score는 AI Builder로 자동 구현 가능한 비율(0~100)입니다. 장비/인증/실물 제어가 필요하면 낮게 잡으세요.
 - difficulty는 1~5 (별점)입니다.
 - screenCount, featureCount는 전체 서비스를 다 만든다고 할 때의 현실적인 예상치입니다.
+- 장비 질문의 options는 질문 내용에 실제로 맞는 선택지여야 합니다. 예/아니오로 답할 수 없는 질문(예: "실제 차를 개조할 계획인가요, 소형 로봇으로 테스트할 계획인가요?")에는 그에 맞는 구체적 선택지(예: ["실제 차 개조", "소형 로봇 테스트", "시뮬레이션만", "아직 미정"])를 넣으세요. 목표 수준을 묻는 질문에는 수준 선택지를, 예산을 묻는 질문에는 예산 범위 선택지를 넣으세요.
 - 모든 텍스트는 완전하고 올바른 한국어로, 깨진 문자나 오타 없이 작성하세요.`;
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
@@ -247,10 +253,27 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       .slice(0, 8);
 
     const hardwareRaw: Partial<HardwareInfo> = parsed.hardware ?? {};
+    const hardwareQuestions: HardwareQuestion[] = (Array.isArray(hardwareRaw.questions) ? hardwareRaw.questions : [])
+      .map((q): HardwareQuestion | null => {
+        // 문자열로 온 경우도 관대하게 처리 (예/아니오 기본 선택지)
+        if (typeof q === "string") {
+          const question = cleanText(q);
+          return question ? { question, options: ["예", "아니오", "잘 모르겠어요"] } : null;
+        }
+        if (typeof q === "object" && q !== null && typeof q.question === "string") {
+          const question = cleanText(q.question);
+          const options = toStringArray(q.options, 4);
+          return question ? { question, options: options.length >= 2 ? options : ["예", "아니오", "잘 모르겠어요"] } : null;
+        }
+        return null;
+      })
+      .filter((q): q is HardwareQuestion => q !== null)
+      .slice(0, 5);
+
     const hardware: HardwareInfo = {
       needed: hardwareRaw.needed === true,
       items: toStringArray(hardwareRaw.items, 8),
-      questions: toStringArray(hardwareRaw.questions, 5),
+      questions: hardwareQuestions,
       limitation: typeof hardwareRaw.limitation === "string" ? cleanText(hardwareRaw.limitation) : "",
     };
 
