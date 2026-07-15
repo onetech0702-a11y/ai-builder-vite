@@ -1880,6 +1880,22 @@ function InterviewPage() {
       <main className="flex flex-1 flex-col px-5 pt-4 pb-[140px] animate-fadeIn md:items-center md:pt-10 md:pb-12">
         <div className="flex w-full flex-col gap-4 md:max-w-[680px]">
           <section className="rounded-[24px] border border-[#ECEEF2] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:p-8">
+            <button
+              onClick={() => {
+                if (idea.trim().length > 0) {
+                  navigate("/project/analyze");
+                } else {
+                  // 아이디어 발굴을 통해 왔으면 발굴 마지막 단계로 되돌아간다
+                  setPhase("discover");
+                  setDStep(DISCOVERY_STEPS.length - 1);
+                  window.scrollTo(0, 0);
+                }
+              }}
+              className="mb-3 flex items-center gap-1 text-[13px] font-medium text-ink-body transition-colors hover:text-ink-title"
+            >
+              <ChevronDown className="h-4 w-4 rotate-90" />
+              이전
+            </button>
             <span className="text-[12px] font-semibold text-primary">시작하기 전에</span>
             <h1 className="mt-1 text-[20px] font-bold text-ink-title">브랜드명을 직접 정하시겠습니까?</h1>
             {idea.trim().length > 0 && <p className="mt-1 text-[13px] text-ink-body">아이디어: {idea}</p>}
