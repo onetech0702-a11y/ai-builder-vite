@@ -495,7 +495,9 @@ function HomePage() {
                 </span>
                 <p className="mt-3 text-[16px] font-bold text-ink-title">이 서비스를 삭제할까요?</p>
                 <p className="mt-1.5 text-[13px] leading-relaxed text-ink-body">
-                  '{(deleteTarget.title && deleteTarget.title.trim()) || (deleteTarget.idea && deleteTarget.idea.trim()) || "이름 없는 서비스"}'의 모든 작업 내용이 사라지며, 되돌릴 수 없습니다.
+                  '{(deleteTarget.title && deleteTarget.title.trim()) || (deleteTarget.idea && deleteTarget.idea.trim()) || "이름 없는 서비스"}'의 모든 작업 내용이 사라집니다.
+                  <br />
+                  이 작업은 되돌릴 수 없습니다.
                 </p>
                 <div className="mt-5 flex gap-2.5">
                   <button onClick={() => setDeleteTarget(null)} className="h-[46px] flex-1 rounded-xl border border-[#E5E8EB] bg-white text-[14px] font-semibold text-ink-body transition-colors hover:border-[#D1D5DB]">
@@ -3868,7 +3870,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <ScrollToTop />
-      <div className="mx-auto flex min-h-[100dvh] w-full flex-col bg-white lg:max-w-[1440px] xl:px-4">
+      <div className="mx-auto flex min-h-[100dvh] w-full max-w-[520px] flex-col bg-white md:max-w-none lg:max-w-[1440px] xl:px-4">
         <AppHeader />
 
         <Routes>
