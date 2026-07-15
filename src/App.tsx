@@ -206,6 +206,24 @@ function loadRecentUserProjects(): UserProjectEntry[] {
   }
 }
 
+function deleteUserProject(id: string) {
+  try {
+    const raw = localStorage.getItem(PROJECTS_LIST_KEY);
+    const list = raw ? (JSON.parse(raw) as UserProjectEntry[]) : [];
+    if (Array.isArray(list)) {
+      localStorage.setItem(PROJECTS_LIST_KEY, JSON.stringify(list.filter((p) => p.id !== id)));
+    }
+    // 현재 열려있는 프로젝트가 삭제 대상이면 함께 정리
+    const current = localStorage.getItem(CURRENT_PROJECT_KEY);
+    if (current) {
+      const parsed = JSON.parse(current) as { id?: string };
+      if (parsed.id === id) localStorage.removeItem(CURRENT_PROJECT_KEY);
+    }
+  } catch {
+    // 삭제 실패는 무시
+  }
+}
+
 function continueRoute(step: string): string {
   if (step.includes("ui") || step.includes("design")) return "/project/mockup";
   if (step.includes("planning") || step.includes("prd") || step.includes("summary")) return "/project/summary";
@@ -221,11 +239,10 @@ function openUserProject(project: UserProjectEntry, navigate: (path: string) => 
   navigate(continueRoute(project.step ?? ""));
 }
 
-function ServiceCard({ project, showStages, navigate }: { project: UserProjectEntry; showStages: boolean; navigate: (p: string) => void }) {
+function ServiceCard({ project, showStages, navigate, onDelete }: { project: UserProjectEntry; showStages: boolean; navigate: (p: string) => void; onDelete: (id: string) => void }) {
   const name = (project.title && project.title.trim()) || (project.idea && project.idea.trim()) || "이름 없는 서비스";
   const progress = Math.min(100, Math.max(0, project.progress ?? 10));
   const stageIndex = stageIndexOf(project.step ?? "");
-  const minutesLeft = Math.max(2, Math.round(((100 - progress) / 100) * 20));
 
   return (
     <motion.article
@@ -238,10 +255,19 @@ function ServiceCard({ project, showStages, navigate }: { project: UserProjectEn
         <div className="min-w-0">
           <h3 className="truncate text-[16px] font-bold text-ink-title">{name}</h3>
           <p className="mt-0.5 text-[12.5px] text-ink-body">
-            현재 <span className="font-semibold text-primary">{SERVICE_STAGES[stageIndex]}</span> · 약 {minutesLeft}분 남음
+            현재 <span className="font-semibold text-primary">{SERVICE_STAGES[stageIndex]}</span>
           </p>
         </div>
-        <span className="shrink-0 text-[14px] font-bold text-primary">{progress}%</span>
+        <div className="flex shrink-0 items-center gap-2.5">
+          <span className="text-[14px] font-bold text-primary">{progress}%</span>
+          <button
+            onClick={() => onDelete(project.id)}
+            aria-label={`${name} 삭제`}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-body transition-colors hover:bg-red-50 hover:text-red-500"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <div className="mt-3">
@@ -286,7 +312,8 @@ function HomePage() {
       return "";
     }
   });
-  const [recentProjects] = useState<UserProjectEntry[]>(() => loadRecentUserProjects());
+  const [recentProjects, setRecentProjects] = useState<UserProjectEntry[]>(() => loadRecentUserProjects());
+  const [deleteTarget, setDeleteTarget] = useState<UserProjectEntry | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const persistDraft = (value: string) => {
@@ -313,6 +340,13 @@ function HomePage() {
   const handleUnknown = () => {
     saveUserProject(createUserProject(""));
     navigate("/project/interview");
+  };
+
+  const handleConfirmDelete = () => {
+    if (!deleteTarget) return;
+    deleteUserProject(deleteTarget.id);
+    setRecentProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
+    setDeleteTarget(null);
   };
 
   const latest = recentProjects[0];
@@ -412,7 +446,7 @@ function HomePage() {
             <h2 className="px-1 text-[16px] font-bold text-ink-title">최근 작업 중인 서비스</h2>
             <div className="mt-3 flex flex-col gap-3">
               {recentProjects.map((project, index) => (
-                <ServiceCard key={project.id} project={project} showStages={index === 0} navigate={navigate} />
+                <ServiceCard key={project.id} project={project} showStages={index === 0} navigate={navigate} onDelete={() => setDeleteTarget(project)} />
               ))}
             </div>
           </section>
@@ -437,6 +471,44 @@ function HomePage() {
             10분 후, <span className="text-primary">당신의 서비스</span>를 직접 실행할 수 있습니다.
           </p>
         </motion.section>
+
+        {/* 삭제 확인 모달 */}
+        <AnimatePresence>
+          {deleteTarget && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6"
+              onClick={() => setDeleteTarget(null)}
+            >
+              <motion.div
+                initial={{ scale: 0.94, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.94, opacity: 0 }}
+                transition={{ duration: 0.18 }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-[320px] rounded-[22px] bg-white p-6 text-center shadow-[0_16px_48px_rgba(15,23,42,0.24)]"
+              >
+                <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
+                  <Trash2 className="h-5 w-5 text-red-500" />
+                </span>
+                <p className="mt-3 text-[16px] font-bold text-ink-title">이 서비스를 삭제할까요?</p>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-ink-body">
+                  '{(deleteTarget.title && deleteTarget.title.trim()) || (deleteTarget.idea && deleteTarget.idea.trim()) || "이름 없는 서비스"}'의 모든 작업 내용이 사라지며, 되돌릴 수 없습니다.
+                </p>
+                <div className="mt-5 flex gap-2.5">
+                  <button onClick={() => setDeleteTarget(null)} className="h-[46px] flex-1 rounded-xl border border-[#E5E8EB] bg-white text-[14px] font-semibold text-ink-body transition-colors hover:border-[#D1D5DB]">
+                    취소
+                  </button>
+                  <button onClick={handleConfirmDelete} className="h-[46px] flex-1 rounded-xl bg-red-500 text-[14px] font-semibold text-white transition-colors hover:bg-red-600">
+                    삭제
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* 서비스 제작 과정 */}
         <section className="pb-2 text-center">
