@@ -6,6 +6,7 @@ import {
   useNavigate,
   useLocation,
   useParams,
+  useSearchParams,
 } from "react-router-dom";
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -1138,12 +1139,18 @@ type AnalyzeStatus = "loading" | "ready" | "error";
 
 function AnalyzePage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [idea] = useState(() => loadCurrentIdea());
   const saved = loadSavedAnalysis();
 
   const [analysis, setAnalysis] = useState<ProjectAnalysis | null>(saved.analysis);
   const [status, setStatus] = useState<AnalyzeStatus>(saved.analysis ? "ready" : "loading");
-  const [stepIndex, setStepIndex] = useState(0);
+  // 현재 단계는 URL(?s=번호)에서 읽는다 → 브라우저 뒤로가기가 단계 이동으로 동작
+  const stepIndex = Math.max(0, Number(searchParams.get("s") ?? "0")) || 0;
+  const goStep = (next: number) => {
+    setSearchParams(next <= 0 ? {} : { s: String(next) });
+    window.scrollTo(0, 0);
+  };
 
   const [category, setCategory] = useState(saved.choice?.category ?? "");
   const [isCategoryEdit, setIsCategoryEdit] = useState(false);
@@ -1215,15 +1222,15 @@ function AnalyzePage() {
   const hardwareNeeded = analysis.hardware.needed && analysis.hardware.questions.length > 0;
   // 장비가 필요 없으면 장비 단계는 건너뛴다
   const visibleSteps = hardwareNeeded ? ANALYZE_STEPS : ANALYZE_STEPS.filter((s) => s !== "장비 분석");
-  const currentStep = visibleSteps[stepIndex];
+  const safeStepIndex = Math.min(stepIndex, visibleSteps.length - 1);
+  const currentStep = visibleSteps[safeStepIndex];
   const isLast = stepIndex === visibleSteps.length - 1;
 
   const finalMvpItems = mvpMode === "full" ? analysis.features.map((f) => f.name) : mvpMode === "custom" ? customMvp : analysis.mvp.items;
 
   const handleNext = () => {
     if (!isLast) {
-      setStepIndex((prev) => prev + 1);
-      window.scrollTo(0, 0);
+      goStep(stepIndex + 1);
       return;
     }
     // 분석 확정 → 인터뷰 시작
@@ -1245,8 +1252,7 @@ function AnalyzePage() {
       navigate("/");
       return;
     }
-    setStepIndex((prev) => prev - 1);
-    window.scrollTo(0, 0);
+    navigate(-1); // 브라우저 뒤로가기와 동일하게 동작
   };
 
   return (
@@ -1681,7 +1687,10 @@ function InterviewPage() {
   };
 
   const initial = loadInterviewState();
-  const [stepIndex, setStepIndex] = useState(initial.step - 1);
+  const [searchParams, setSearchParams] = useSearchParams();
+  // 질문 단계는 URL(?q=번호)에서 읽는다 → 브라우저 뒤로가기가 이전 질문으로 이동
+  const qParam = searchParams.get("q");
+  const stepIndex = qParam !== null ? Math.min(Math.max(0, Number(qParam) || 0), INTERVIEW_STEPS.length - 1) : initial.step - 1;
   const [answers, setAnswers] = useState<InterviewAnswers>(initial.answers);
   const [showHelp, setShowHelp] = useState(false);
   const [recommendation, setRecommendation] = useState<AIRecommendation | null>(null);
@@ -1705,7 +1714,7 @@ function InterviewPage() {
 
   const moveTo = (nextIndex: number) => {
     persist(nextIndex + 1, answers);
-    setStepIndex(nextIndex);
+    setSearchParams({ q: String(nextIndex) });
     setShowHelp(false);
     setRecommendation(null);
     setRecommendNotice("");
@@ -1730,8 +1739,11 @@ function InterviewPage() {
   };
 
   const handlePrev = () => {
-    if (stepIndex === 0) return;
-    moveTo(stepIndex - 1);
+    if (stepIndex === 0) {
+      navigate(-1);
+      return;
+    }
+    navigate(-1);
   };
 
   const handleShowHelp = () => setShowHelp(true);
