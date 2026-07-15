@@ -2961,7 +2961,6 @@ const QUICK_GROUPS: { title: string; items: string[] }[] = [
   { title: "기능", items: ["로그인 추가", "검색 기능 추가", "즐겨찾기 추가", "알림 추가", "공유 기능 추가", "설정 추가"] },
 ];
 
-const STYLE_OPTIONS = ["심플", "토스 스타일", "Apple 스타일", "Google 스타일", "카카오 스타일", "AI 추천"];
 
 function MockupPage() {
   const navigate = useNavigate();
@@ -2978,6 +2977,7 @@ function MockupPage() {
   const [selectedScreenId, setSelectedScreenId] = useState<string>(savedEditor.ui?.screens[0]?.id ?? "");
   const [selectedElement, setSelectedElement] = useState<number | null>(null);
   const [instruction, setInstruction] = useState("");
+  const [setupStyleInput, setSetupStyleInput] = useState("");
   const [newScreenName, setNewScreenName] = useState("");
   const [isAddingScreen, setIsAddingScreen] = useState(false);
   const [compare, setCompare] = useState<EditorState | null>(null);
@@ -3207,19 +3207,36 @@ function MockupPage() {
   }
 
   if (phase === "setup") {
+    const startWithStyle = (styleText: string) => {
+      const nextDesign = { ...design, style: styleText };
+      setDesign(nextDesign);
+      persistEditor({ ui: { theme: "", navigation: "", flow: [], screens: [] }, design: nextDesign, overrides: {} }, versions);
+      runAI(styleText === "AI 추천" ? "이 서비스에 가장 어울리는 스타일로 앱 디자인을 만들어줘" : `${styleText} 느낌으로 앱 디자인을 만들어줘`);
+    };
+
     return (
       <main className="flex flex-1 flex-col px-5 pt-4 pb-[140px] animate-fadeIn md:items-center md:pt-10 md:pb-12">
         <div className="flex w-full flex-col gap-4 md:max-w-[560px]">
           <section className="rounded-[24px] border border-[#ECEEF2] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:p-8">
+            <button
+              onClick={() => navigate("/project/summary")}
+              className="mb-3 flex items-center gap-1 text-[13px] font-medium text-ink-body transition-colors hover:text-ink-title"
+            >
+              <ChevronDown className="h-4 w-4 rotate-90" />
+              이전
+            </button>
+
             <span className="text-[12px] font-semibold text-primary">앱 디자인 미리보기</span>
-            <h1 className="mt-1 text-[22px] font-bold text-ink-title">어떤 스타일로 만들까요?</h1>
-            <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-              {STYLE_OPTIONS.map((style) => (
-                <button key={style} onClick={() => setDesign((d) => ({ ...d, style }))} className={cn("rounded-2xl border px-3 py-3.5 text-[14px] font-medium transition-colors", design.style === style ? "border-primary bg-primary/5 text-primary" : "border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]")}>
-                  {style}
-                </button>
-              ))}
-            </div>
+            <h1 className="mt-1 text-[22px] font-bold text-ink-title">어떤 느낌으로 만들까요?</h1>
+            <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-body">원하는 분위기를 자유롭게 적어주세요. 어렵다면 AI가 알아서 어울리게 만들어드릴게요.</p>
+
+            <textarea
+              value={setupStyleInput}
+              onChange={(e) => setSetupStyleInput(e.target.value)}
+              placeholder="예: 깔끔하고 심플하게 / 토스처럼 세련되게 / 따뜻하고 귀여운 느낌으로"
+              className="mt-4 min-h-[92px] w-full resize-none rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-base leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+
             <h2 className="mt-6 text-[15px] font-semibold text-ink-title">메인 색상</h2>
             <div className="mt-3 flex flex-wrap items-center gap-2.5">
               {COLOR_OPTIONS.map((color) => (
@@ -3230,11 +3247,20 @@ function MockupPage() {
                 <input type="color" value={design.color} onChange={(e) => setDesign((d) => ({ ...d, color: e.target.value }))} className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0" />
               </label>
             </div>
+
             <button
-              onClick={() => { persistEditor({ ui: { theme: "", navigation: "", flow: [], screens: [] }, design, overrides: {} }, versions); runAI("이 서비스의 앱 디자인을 처음 만들어줘"); }}
+              onClick={() => startWithStyle(setupStyleInput.trim() || "심플")}
               className="mt-6 flex h-[52px] w-full items-center justify-center rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)] transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
             >
               디자인 미리보기 만들기
+            </button>
+
+            <button
+              onClick={() => startWithStyle("AI 추천")}
+              className="mt-2.5 flex h-[48px] w-full items-center justify-center gap-1.5 rounded-2xl border border-primary/30 bg-primary/5 text-[14px] font-semibold text-primary transition-colors hover:bg-primary/10"
+            >
+              <Sparkles className="h-4 w-4" />
+              그냥 AI가 어울리게 추천해줘
             </button>
           </section>
         </div>
