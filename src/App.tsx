@@ -16,7 +16,7 @@ import { CSS as DndCSS } from "@dnd-kit/utilities";
 import {
   Home as HomeIcon, Search as SearchIcon, User as UserIcon, Bell, Settings as SettingsIcon, LogIn, UserPlus,
   Plus, Pencil, Undo2, Redo2, GripVertical, Trash2, Sparkles, ChevronDown, X as XIcon, Check, Lightbulb,
-  Minus, LayoutGrid, FileText, Heart, BarChart3, ShieldCheck, MessageCircle, Calendar as CalendarIcon, Smartphone, Wand2,
+  Minus, LayoutGrid, RefreshCw, FileText, Heart, BarChart3, ShieldCheck, MessageCircle, Calendar as CalendarIcon, Smartphone, Wand2,
 } from "lucide-react";
 
 function cn(...inputs: (string | false | null | undefined)[]) {
@@ -1964,6 +1964,13 @@ function InterviewPage() {
                         <span className="text-[12px] font-medium text-primary">선택</span>
                       </button>
                     ))}
+                    <button
+                      onClick={() => void handleBrandAI()}
+                      className="mt-1 flex items-center justify-center gap-1.5 rounded-2xl border border-dashed border-[#D1D5DB] bg-white px-4 py-3 text-[13.5px] font-semibold text-ink-body transition-colors duration-200 hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      마음에 드는 이름이 없어요, 다시 추천받기
+                    </button>
                   </div>
                 )}
               </div>
