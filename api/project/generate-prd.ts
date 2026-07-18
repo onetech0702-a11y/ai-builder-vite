@@ -14,10 +14,16 @@ interface PRDAnswers {
   additional?: string;
 }
 
+interface QAItem {
+  question: string;
+  answer: string;
+}
+
 interface PRDRequestBody {
   idea?: string;
   brandName?: string;
   answers?: PRDAnswers;
+  qa?: QAItem[];
   instruction?: string;
   currentPrd?: Record<string, unknown>;
 }
@@ -148,9 +154,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return;
   }
 
-  const { idea = "", answers = {}, instruction, currentPrd, brandName } = req.body ?? {};
+  const { idea = "", answers = {}, qa, instruction, currentPrd, brandName } = req.body ?? {};
 
-  if (!idea && !answers.targetUser && !answers.coreFeatures) {
+  const hasQA = Array.isArray(qa) && qa.length > 0;
+  if (!idea && !answers.targetUser && !answers.coreFeatures && !hasQA) {
     res.status(400).json({ success: false, error: "idea or answers required" });
     return;
   }
@@ -185,7 +192,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             content: JSON.stringify({
               idea,
               brandName: brandName ? cleanText(brandName) : null,
-              answers,
+              // 인터뷰 질문/답변 (AI가 아이디어별로 생성한 질문과 사용자의 답변)
+              interview: hasQA
+                ? qa.map((item) => ({
+                    question: typeof item.question === "string" ? cleanText(item.question) : "",
+                    answer: typeof item.answer === "string" ? cleanText(item.answer) : "",
+                  }))
+                : answers,
               currentPrd: currentPrd ?? null,
               instruction: instruction ? cleanText(instruction) : null,
             }),

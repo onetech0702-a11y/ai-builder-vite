@@ -5,7 +5,6 @@ import {
   Route,
   useNavigate,
   useLocation,
-  useParams,
   useSearchParams,
 } from "react-router-dom";
 import { clsx } from "clsx";
@@ -25,7 +24,6 @@ function cn(...inputs: (string | false | null | undefined)[]) {
 }
 import logo from "./assets/onetech-logo.png";
 import ProgressBar from "./components/ProgressBar";
-import { RECENT_PROJECTS, Project } from "./data/mockData";
 
 /* ---------------------------------------------
  * Phase 1-2: Project Create(프로젝트 생성) 기능
@@ -133,43 +131,6 @@ const NAV_ROUTES: NavRoute[] = [
   { id: "projects", label: "프로젝트", path: "/projects" },
   { id: "settings", label: "설정", path: "/setting" },
 ];
-
-/* ---------- 최근 프로젝트 (카드 클릭 → 상세 이동) ---------- */
-
-function ProjectIcon({ type }: { type: Project["icon"] }) {
-  const common = {
-    width: 18,
-    height: 18,
-    viewBox: "0 0 24 24",
-    fill: "none" as const,
-    stroke: "#FFFFFF",
-    strokeWidth: 2,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-    "aria-hidden": true as const,
-  };
-  switch (type) {
-    case "folder":
-      return (
-        <svg {...common}>
-          <path d="M4 7a1 1 0 0 1 1-1h4l2 2h8a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7z" />
-        </svg>
-      );
-    case "chart":
-      return (
-        <svg {...common}>
-          <path d="M4 16l5-5 4 4 7-8" />
-        </svg>
-      );
-    case "calendar":
-      return (
-        <svg {...common}>
-          <rect x="4" y="5" width="16" height="15" rx="2.5" />
-          <path d="M8 3v4M16 3v4M4 10h16" />
-        </svg>
-      );
-  }
-}
 
 /* ---------- 홈: 최근 서비스 카드 (실제 프로젝트) ---------- */
 
@@ -530,23 +491,6 @@ function HomePage() {
 }
 
 
-/* ---------- 공통: 뒤로가기 버튼 ---------- */
-
-function BackButton({ label }: { label: string }) {
-  const navigate = useNavigate();
-  return (
-    <button
-      onClick={() => navigate("/")}
-      className="flex items-center gap-1 text-[14px] font-medium text-ink-body transition-colors hover:text-ink-title"
-    >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M15 6l-6 6 6 6" />
-      </svg>
-      {label}
-    </button>
-  );
-}
-
 /* ---------- 페이지: Project Create ---------- */
 
 type ProjectType = "idea" | "no-idea";
@@ -670,95 +614,45 @@ function ProjectCreatePage() {
 
 /* ---------- AI 인터뷰: 단계 정의 ---------- */
 
-interface InterviewAnswers {
-  targetUser: string;
-  coreFeatures: string;
-  platform: string;
-  auth: string;
-  payment: string;
-  additional: string;
-}
-
-type InterviewField = keyof InterviewAnswers;
-
-const EMPTY_ANSWERS: InterviewAnswers = {
-  targetUser: "",
-  coreFeatures: "",
-  platform: "",
-  auth: "",
-  payment: "",
-  additional: "",
-};
-
-interface InterviewStepDef {
-  field: InterviewField;
+/* ---------- AI 생성 인터뷰 질문 ----------
+ * 질문/선택지/설명은 하드코딩하지 않고, 사용자가 입력한 서비스에 맞춰 AI가 실시간 생성한다.
+ */
+interface GeneratedQuestion {
+  id: string;
   label: string;
   question: string;
   type: "text" | "choice";
-  placeholder?: string;
-  options?: string[];
-  required: boolean;
+  placeholder: string;
+  options: string[];
   help: string;
+  required: boolean;
 }
 
-const INTERVIEW_STEPS: InterviewStepDef[] = [
-  {
-    field: "targetUser",
-    label: "대상 사용자",
-    question: "이 서비스는 누구를 위한 서비스인가요?",
-    type: "text",
-    placeholder: "예: 초보 투자자, 미용실 사장님, 헬스장 회원 등",
-    required: true,
-    help: "대상 사용자는 이 서비스를 가장 자주 쓰는 사람입니다. 대상 사용자가 명확해야 기능과 디자인 방향을 정할 수 있습니다.",
-  },
-  {
-    field: "coreFeatures",
-    label: "핵심 기능",
-    question: "이 서비스에서 꼭 필요한 핵심 기능은 무엇인가요?",
-    type: "text",
-    placeholder: "예: 예약 관리, 고객 관리, 알림, 결제, 관리자 페이지 등",
-    required: true,
-    help: "핵심 기능은 이 서비스가 반드시 해결해야 하는 주요 기능입니다. 처음부터 많은 기능을 넣기보다 MVP에 필요한 기능만 정하는 것이 좋습니다.",
-  },
-  {
-    field: "platform",
-    label: "사용 플랫폼",
-    question: "사용자는 이 서비스를 어디에서 주로 사용하나요?",
-    type: "choice",
-    options: ["모바일 앱", "모바일 웹", "PC 웹", "모두 필요"],
-    required: true,
-    help: "플랫폼은 사용자가 서비스를 사용하는 환경입니다. 빠른 출시가 목표라면 모바일 웹부터 시작하는 것이 좋습니다.",
-  },
-  {
-    field: "auth",
-    label: "로그인 필요 여부",
-    question: "로그인이나 회원가입이 필요한가요?",
-    type: "choice",
-    options: ["필요합니다", "필요 없습니다", "잘 모르겠습니다"],
-    required: true,
-    help: "로그인은 사용자별 데이터를 저장해야 할 때 필요합니다. 기록, 즐겨찾기, 결제, 알림 기능이 있으면 로그인을 추천합니다.",
-  },
-  {
-    field: "payment",
-    label: "결제 필요 여부",
-    question: "결제 기능이 필요한가요?",
-    type: "choice",
-    options: ["필요합니다", "필요 없습니다", "나중에 추가할 예정입니다", "잘 모르겠습니다"],
-    required: true,
-    help: "결제는 수익화와 관련된 기능입니다. MVP 단계에서는 결제를 나중으로 미루는 것이 더 빠르게 출시할 수 있습니다.",
-  },
-  {
-    field: "additional",
-    label: "추가 요청사항",
-    question: "추가로 원하는 기능이나 참고하고 싶은 서비스가 있나요?",
-    type: "text",
-    placeholder: "예: 토스처럼 깔끔하게, 카카오톡 알림, 관리자 통계, 참고 사이트 URL 등",
-    required: false,
-    help: "추가 기능은 서비스 완성도를 높이는 보조 기능입니다. 알림, 통계, 관리자 페이지, 문의하기 등이 여기에 해당합니다.",
-  },
-];
+async function fetchInterviewQuestionsOnce(idea: string, analysis: unknown): Promise<GeneratedQuestion[]> {
+  const response = await fetch("/api/interview/generate-questions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ idea, analysis }),
+  });
+  if (!response.ok) throw new Error(`API error: ${response.status}`);
+  const data = (await response.json()) as { success: boolean; questions?: GeneratedQuestion[]; error?: string };
+  if (!data.success || !data.questions || data.questions.length < 3) throw new Error(data.error ?? "질문 생성 실패");
+  return data.questions;
+}
 
-const INTERVIEW_PROGRESS = [16, 33, 50, 66, 83, 100];
+// AI가 일시적으로 실패하는 경우가 있어 최대 3번까지 자동 재시도한다
+async function fetchInterviewQuestions(idea: string, analysis: unknown, retries = 2): Promise<GeneratedQuestion[]> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fetchInterviewQuestionsOnce(idea, analysis);
+    } catch (error) {
+      lastError = error;
+      if (attempt < retries) await new Promise((resolve) => setTimeout(resolve, 700 * (attempt + 1)));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("질문 생성 실패");
+}
 
 /* ---------- 브랜드명 추천 / 아이디어 발굴 API ---------- */
 
@@ -800,54 +694,8 @@ async function fetchIdeaSuggestions(discovery: Record<string, string>, retries =
   throw lastError instanceof Error ? lastError : new Error("아이디어 추천 실패");
 }
 
-async function fetchQuestionOptionsOnce(idea: string, field: string, question: string): Promise<string[]> {
-  const response = await fetch("/api/interview/recommend", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mode: "question-options", idea, field, question }),
-  });
-  if (!response.ok) throw new Error(`API error: ${response.status}`);
-  const data = (await response.json()) as { success: boolean; options?: string[]; error?: string };
-  if (!data.success || !data.options || data.options.length < 2) throw new Error(data.error ?? "선택지 생성 실패");
-  return data.options;
-}
 
-// AI가 일시적으로 못 불러오는 경우가 있어, 최대 3번까지 자동 재시도한다
-async function fetchQuestionOptions(idea: string, field: string, question: string, retries = 2): Promise<string[]> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      return await fetchQuestionOptionsOnce(idea, field, question);
-    } catch (error) {
-      lastError = error;
-      if (attempt < retries) {
-        // 점점 간격을 늘려 재시도 (0.6s, 1.2s)
-        await new Promise((resolve) => setTimeout(resolve, 600 * (attempt + 1)));
-      }
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error("선택지 생성 실패");
-}
-
-const FALLBACK_IDEAS_BY_CATEGORY: Record<string, string[]> = {
-  음식: ["AI 식단 관리 앱", "맛집 기록 지도", "냉장고 재료 레시피 추천", "다이어트 식단 코치", "동네 배달 모아보기"],
-  운동: ["AI 운동 기록 앱", "홈트 루틴 추천", "러닝 코스 기록", "PT 예약 관리", "체중 변화 트래커"],
-  여행: ["AI 여행 일정 추천", "여행 경비 정산 앱", "가볼 곳 위시리스트", "환율 여행 가계부", "동행 구하기 커뮤니티"],
-  금융: ["AI 가계부", "구독 관리 앱", "소액 투자 기록", "용돈 관리 앱", "지출 리포트 대시보드"],
-  병원: ["병원 예약 관리", "복약 알림 앱", "증상 기록 다이어리", "건강검진 리마인더", "반려동물 건강 수첩"],
-  쇼핑: ["최저가 비교 앱", "위시리스트 알림", "중고거래 매칭", "공동구매 모임", "쇼핑 예산 관리"],
-  교육: ["AI 단어 암기 앱", "온라인 강의 관리", "스터디 모임 매칭", "학습 시간 트래커", "자격증 일정 관리"],
-  생산성: ["할 일 관리 앱", "습관 형성 트래커", "집중 타이머", "메모 정리 앱", "목표 관리 대시보드"],
-  AI: ["AI 글쓰기 도우미", "AI 이미지 정리 앱", "AI 일정 비서", "AI 요약 노트", "AI 챗봇 상담"],
-};
-const FALLBACK_IDEAS = ["AI 식단 관리 앱", "예약관리 시스템", "AI 운동 기록 앱", "AI 가계부", "AI 독서 관리 앱"];
-
-/* ---------- Mock AI Recommendation Engine ----------
- * idea 키워드 + 현재 step을 기반으로 추천을 생성한다.
- * 추후 AI 연결 시 getMockRecommendation(idea, step)을
- * getAIRecommendation(idea, step, answers) API 호출로 교체하면 된다.
- * 반환 형태(AIRecommendation)는 유지한다.
- */
+/* ---------- AI 추천 타입 ---------- */
 
 interface AIRecommendation {
   answer: string;           // 화면에 표시하는 추천 답변
@@ -856,203 +704,26 @@ interface AIRecommendation {
   extraQuestions?: string[]; // AI가 제안하는 추가 질문
 }
 
-type RecommendationSet = Record<InterviewField, AIRecommendation>;
-
-function rec(answer: string, reasons: string[], applyValue?: string): AIRecommendation {
-  return { answer, applyValue: applyValue ?? answer, reasons };
-}
-
-const RECOMMENDATION_PRESETS: { keywords: string[]; set: RecommendationSet }[] = [
-  {
-    keywords: ["독서", "북클럽", "책 기록"],
-    set: {
-      targetUser: rec("책을 꾸준히 읽고 싶은 사람, 독서 습관을 만들고 싶은 사용자", [
-        "독서앱은 읽은 책을 기록하고 독서 루틴을 만드는 사용자가 주로 사용합니다",
-      ]),
-      coreFeatures: rec("독서 기록, 읽은 책 목록, 독서 목표 설정, 메모, 책 추천", [
-        "읽은 책을 기록으로 남기는 것이 독서앱의 핵심 가치입니다",
-        "목표와 메모가 있으면 독서 습관이 이어집니다",
-      ]),
-      platform: rec("모바일 앱", [
-        "독서 기록은 책을 읽은 직후 바로 작성하는 경우가 많아 모바일 앱이 적합합니다",
-      ]),
-      auth: rec("필요합니다", ["사용자의 독서 기록, 메모, 목표를 저장해야 하기 때문입니다"]),
-      payment: rec("나중에 추가할 예정입니다", [
-        "초기에는 무료 기록 기능으로 사용자를 모으고, 이후 프리미엄 책 추천이나 통계 기능으로 수익화하는 것이 좋습니다",
-      ]),
-      additional: rec("월간 독서 리포트, 독서 streak, 인상 깊은 문장 저장, AI 책 추천", [
-        "기록이 쌓일수록 가치가 커지는 기능들입니다",
-      ]),
-    },
-  },
-  {
-    keywords: ["주식", "투자"],
-    set: {
-      targetUser: rec("초보 투자자, 미국주식에 관심 있는 개인 투자자", [
-        "정보가 어려워 진입하지 못하는 초보 투자자가 가장 큰 잠재 사용자층입니다",
-      ]),
-      coreFeatures: rec("관심종목, 종목 검색, 뉴스 요약, 용어 설명, 포트폴리오 기록", [
-        "초보 투자자는 어려운 정보를 쉽게 정리해주는 기능을 가장 필요로 합니다",
-      ]),
-      platform: rec("모바일 웹 또는 모바일 앱", [
-        "시세 확인과 기록은 이동 중 모바일 사용 비중이 높습니다",
-        "모바일 웹으로 시작하면 더 빠르게 출시할 수 있습니다",
-      ], "모바일 웹"),
-      auth: rec("필요합니다", ["관심종목, 포트폴리오 기록을 사용자별로 저장해야 합니다"]),
-      payment: rec("나중에 추가할 예정입니다", [
-        "먼저 무료 기능으로 사용자를 확보한 후 프리미엄 분석 기능으로 수익화하는 것이 좋습니다",
-      ]),
-      additional: rec("AI 뉴스 요약, 초보자용 투자 용어 설명, 관심종목 알림", [
-        "초보 투자자의 재방문을 만드는 대표 기능들입니다",
-      ]),
-    },
-  },
-  {
-    keywords: ["예약"],
-    set: {
-      targetUser: rec("1인샵 사장님, 미용실/네일샵/속눈썹샵 운영자", [
-        "예약 관리가 가장 절실한 사용자는 혼자 매장을 운영하는 사장님입니다",
-      ]),
-      coreFeatures: rec("예약 등록, 예약 변경, 고객 관리, 알림, 관리자 페이지", [
-        "예약의 등록·변경·알림이 서비스의 핵심 흐름입니다",
-      ]),
-      platform: rec("모바일 웹", [
-        "사장님과 고객 모두 설치 없이 링크로 바로 사용할 수 있습니다",
-      ]),
-      auth: rec("필요합니다", ["매장별 예약과 고객 정보를 구분해서 저장해야 합니다"]),
-      payment: rec("필요 없습니다", [
-        "예약 자체는 결제 없이 운영하는 매장이 많고, 현장 결제로 시작할 수 있습니다",
-      ]),
-      additional: rec("카카오톡 알림, 예약 리마인더, 고객 메모, 노쇼 관리", [
-        "예약 서비스의 만족도를 결정하는 운영 기능들입니다",
-      ]),
-    },
-  },
-  {
-    keywords: ["운동", "헬스", "피트니스"],
-    set: {
-      targetUser: rec("운동 기록을 남기고 싶은 일반 사용자", [
-        "전문 선수보다 습관을 만들고 싶은 일반 사용자가 훨씬 많습니다",
-      ]),
-      coreFeatures: rec("운동 기록, 루틴 관리, 목표 설정, 체중 변화 기록, 통계", [
-        "기록과 루틴이 운동앱 사용을 지속시키는 핵심입니다",
-      ]),
-      platform: rec("모바일 앱", ["운동 직후 바로 기록하는 사용 패턴에 모바일 앱이 적합합니다"]),
-      auth: rec("필요합니다", ["운동 기록과 체중 변화를 사용자별로 저장해야 합니다"]),
-      payment: rec("나중에 추가할 예정입니다", [
-        "무료 기록 기능으로 시작하고 프리미엄 루틴 추천으로 수익화하는 것이 좋습니다",
-      ]),
-      additional: rec("운동 루틴 추천, 주간 리포트, 사진 기록", [
-        "변화를 눈으로 확인하게 해주는 기능이 지속 사용을 만듭니다",
-      ]),
-    },
-  },
-  {
-    keywords: ["가계부", "지출", "소비"],
-    set: {
-      targetUser: rec("지출을 관리하고 싶은 직장인, 사회초년생", [
-        "고정 수입이 생기면서 지출 관리를 시작하는 시기의 사용자입니다",
-      ]),
-      coreFeatures: rec("수입/지출 기록, 카테고리 분류, 월간 통계, 예산 설정", [
-        "기록 → 분류 → 통계가 가계부의 기본 흐름입니다",
-      ]),
-      platform: rec("모바일 앱", ["지출 직후 바로 기록하는 사용 패턴에 모바일 앱이 적합합니다"]),
-      auth: rec("필요합니다", ["개인 금융 기록을 안전하게 저장해야 합니다"]),
-      payment: rec("나중에 추가할 예정입니다", [
-        "무료 기록 기능으로 시작하고 소비 리포트 등 프리미엄 기능으로 확장하는 것이 좋습니다",
-      ]),
-      additional: rec("고정지출 관리, 카드값 계산, 소비 리포트", [
-        "매달 반복되는 관리 부담을 줄여주는 기능들입니다",
-      ]),
-    },
-  },
-  {
-    keywords: ["쇼핑몰", "쇼핑", "커머스", "판매"],
-    set: {
-      targetUser: rec("온라인으로 상품을 판매하려는 소상공인", [
-        "자체 판매 채널이 필요한 소상공인이 핵심 사용자입니다",
-      ]),
-      coreFeatures: rec("상품 등록, 장바구니, 주문 관리, 결제, 관리자 페이지", [
-        "상품 등록부터 주문·결제까지가 쇼핑몰의 필수 흐름입니다",
-      ]),
-      platform: rec("모바일 웹과 PC 웹 모두 필요", [
-        "구매는 모바일, 상품 관리 등 운영은 PC에서 주로 이뤄집니다",
-      ], "모두 필요"),
-      auth: rec("필요합니다", ["주문 내역과 배송 정보를 사용자별로 관리해야 합니다"]),
-      payment: rec("필요합니다", ["상품 판매에는 결제가 필수 기능입니다"]),
-      additional: rec("재고 관리, 쿠폰, 리뷰, 배송 조회", [
-        "판매와 재구매를 늘리는 대표 커머스 기능들입니다",
-      ]),
-    },
-  },
-  {
-    keywords: ["배달"],
-    set: {
-      targetUser: rec("음식점 사장님과 배달 주문을 원하는 고객", [
-        "주문을 받는 사장님과 주문하는 고객, 양쪽이 모두 사용자입니다",
-      ]),
-      coreFeatures: rec("메뉴 등록, 주문, 결제, 배달 상태, 관리자 페이지", [
-        "주문 접수부터 배달 완료까지의 흐름이 핵심입니다",
-      ]),
-      platform: rec("모바일 앱", ["주문과 배달 상태 확인 모두 모바일 사용 비중이 압도적입니다"]),
-      auth: rec("필요합니다", ["주문 내역과 배달 주소를 사용자별로 저장해야 합니다"]),
-      payment: rec("필요합니다", ["배달 주문은 선결제가 기본 흐름입니다"]),
-      additional: rec("주문 알림, 배달 상태 추적, 리뷰, 쿠폰", [
-        "주문 경험과 재주문율을 높이는 기능들입니다",
-      ]),
-    },
-  },
-];
-
-const DEFAULT_RECOMMENDATIONS: RecommendationSet = {
-  targetUser: rec("이 서비스를 가장 자주 사용할 핵심 사용자", [
-    "대상이 좁고 명확할수록 기능 우선순위가 분명해집니다",
-    "초기 피드백을 빠르게 받아 개선할 수 있습니다",
-  ]),
-  coreFeatures: rec("사용자 문제를 해결하는 핵심 기능 3~5개", [
-    "MVP는 없으면 서비스가 성립하지 않는 기능만 담는 것이 좋습니다",
-  ]),
-  platform: rec("모바일 웹", [
-    "가장 빠르게 출시할 수 있고 모바일과 PC 모두 대응 가능합니다",
-    "추후 앱으로 전환할 수 있습니다",
-  ]),
-  auth: rec("잘 모르겠습니다", [
-    "핵심 기능이 정해지면 로그인 필요 여부가 자연스럽게 결정됩니다",
-    "지금은 보류하고 기획 단계에서 다시 검토해도 됩니다",
-  ]),
-  payment: rec("나중에 추가할 예정입니다", [
-    "먼저 사용자를 확보한 후 수익화 기능을 붙이는 것이 안전합니다",
-  ]),
-  additional: rec("관리자 페이지, 알림, 통계, 문의하기", [
-    "대부분의 서비스에서 공통으로 필요한 보조 기능들입니다",
-  ]),
-};
-
 interface RecommendApiResponse {
   success: boolean;
-  recommendation?: {
-    answer: string;
-    reason: string;
-    applyValue: string;
-    extraQuestions: string[];
-  };
+  recommendation?: { answer: string; reason: string; applyValue: string; extraQuestions?: string[] };
   error?: string;
 }
 
-async function fetchAIRecommendation(
+async function fetchAIRecommendationOnce(
   idea: string,
+  question: GeneratedQuestion,
   step: number,
-  answers: InterviewAnswers
+  answers: Record<string, string>
 ): Promise<AIRecommendation> {
-  const stepDef = INTERVIEW_STEPS[step];
   const response = await fetch("/api/interview/recommend", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       idea,
       currentStep: step + 1,
-      question: stepDef.question,
-      options: stepDef.type === "choice" ? stepDef.options : undefined,
+      question: question.question,
+      options: question.type === "choice" ? question.options : undefined,
       answers,
     }),
   });
@@ -1071,24 +742,33 @@ async function fetchAIRecommendation(
   };
 }
 
-function getMockRecommendation(idea: string, step: number): AIRecommendation {
-  const field = INTERVIEW_STEPS[step].field;
-  const normalized = idea.trim();
-  const preset = RECOMMENDATION_PRESETS.find((p) => p.keywords.some((k) => normalized.includes(k)));
-  return (preset ? preset.set : DEFAULT_RECOMMENDATIONS)[field];
+// AI가 일시적으로 실패하는 경우가 있어 최대 3번까지 자동 재시도한다
+async function fetchAIRecommendation(idea: string, question: GeneratedQuestion, step: number, answers: Record<string, string>, retries = 2): Promise<AIRecommendation> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fetchAIRecommendationOnce(idea, question, step, answers);
+    } catch (error) {
+      lastError = error;
+      if (attempt < retries) await new Promise((resolve) => setTimeout(resolve, 600 * (attempt + 1)));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("AI 추천 실패");
 }
 
 /* ---------- 페이지: AI 인터뷰 (단계형 플로우) ---------- */
 
-function loadInterviewState(): { step: number; answers: InterviewAnswers } {
+function loadSavedAnswers(): Record<string, string> {
   const project = loadCurrentProject();
-  const savedStep = typeof project.interviewStep === "number" ? project.interviewStep : 1;
-  const savedAnswers =
-    typeof project.interviewAnswers === "object" && project.interviewAnswers !== null
-      ? (project.interviewAnswers as Partial<InterviewAnswers>)
-      : {};
-  const step = Math.min(Math.max(savedStep, 1), INTERVIEW_STEPS.length);
-  return { step, answers: { ...EMPTY_ANSWERS, ...savedAnswers } };
+  return typeof project.interviewAnswers === "object" && project.interviewAnswers !== null
+    ? (project.interviewAnswers as Record<string, string>)
+    : {};
+}
+
+function loadSavedQuestions(): GeneratedQuestion[] | null {
+  const project = loadCurrentProject();
+  const saved = project.interviewQuestions;
+  return Array.isArray(saved) && saved.length > 0 ? (saved as GeneratedQuestion[]) : null;
 }
 
 /* ---------- AI 프로젝트 분석 (Phase 4-1) ---------- */
@@ -1700,21 +1380,19 @@ function InterviewPage() {
   const [dAnswers, setDAnswers] = useState<Record<string, string>>({ category: "", who: "", problem: "", revenue: "", platform: "" });
   const [ideaOptions, setIdeaOptions] = useState<string[] | null>(null);
   const [isDiscovering, setIsDiscovering] = useState(false);
-  const [ideaFromAI, setIdeaFromAI] = useState(false); // 지금 목록이 AI 생성분인지
+  const [ideaFailed, setIdeaFailed] = useState(false);
 
   // 아이디어 추천 실행 (최초/다시 추천 공통)
   const runIdeaSuggest = async () => {
     setIsDiscovering(true);
+    setIdeaFailed(false);
     try {
       const ideas = await fetchIdeaSuggestions(dAnswers);
       setIdeaOptions(ideas);
-      setIdeaFromAI(true);
     } catch {
-      // AI 실패 시: 관심 분야에 맞는 예비 아이디어를 섞어서 보여준다 (매번 조금씩 다르게)
-      const pool = FALLBACK_IDEAS_BY_CATEGORY[dAnswers.category] ?? FALLBACK_IDEAS;
-      const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, 5);
-      setIdeaOptions(shuffled);
-      setIdeaFromAI(false);
+      // AI 실패 시 더미를 보여주지 않고 다시 시도하도록 안내
+      setIdeaOptions(null);
+      setIdeaFailed(true);
     } finally {
       setIsDiscovering(false);
     }
@@ -1730,7 +1408,8 @@ function InterviewPage() {
   };
 
   const handlePickIdea = (picked: string) => {
-    updateCurrentProject({ idea: picked, title: picked, ideaGenerated: true, ideaCategory: dAnswers.category });
+    // 아이디어가 바뀌면 이전 질문/답변은 버리고 새 아이디어에 맞게 다시 생성한다
+    updateCurrentProject({ idea: picked, title: picked, ideaGenerated: true, ideaCategory: dAnswers.category, interviewQuestions: null, interviewAnswers: {}, interviewStep: 1 });
     setIdea(picked);
     setPhase("brand");
     window.scrollTo(0, 0);
@@ -1765,58 +1444,63 @@ function InterviewPage() {
     }
   };
 
-  const initial = loadInterviewState();
   const [searchParams, setSearchParams] = useSearchParams();
   // 질문 단계는 URL(?q=번호)에서 읽는다 → 브라우저 뒤로가기가 이전 질문으로 이동
   const qParam = searchParams.get("q");
-  const stepIndex = qParam !== null ? Math.min(Math.max(0, Number(qParam) || 0), INTERVIEW_STEPS.length - 1) : initial.step - 1;
-  // 질문별 AI 선택지 캐시 (field 기준). 로딩 전에는 기본 선택지 사용
-  const [dynamicOptions, setDynamicOptions] = useState<Record<string, string[]>>({});
-  const [optionsLoadingField, setOptionsLoadingField] = useState<string | null>(null);
-  const [optionsFailedField, setOptionsFailedField] = useState<string | null>(null);
-  const [optionsRetryKey, setOptionsRetryKey] = useState(0);
-  const [answers, setAnswers] = useState<InterviewAnswers>(initial.answers);
+
+  // AI가 생성한 인터뷰 질문 (하드코딩 없음). 저장된 게 있으면 재사용
+  const [questions, setQuestions] = useState<GeneratedQuestion[]>(() => loadSavedQuestions() ?? []);
+  const [questionsLoading, setQuestionsLoading] = useState(false);
+  const [questionsFailed, setQuestionsFailed] = useState(false);
+  const [questionsRetryKey, setQuestionsRetryKey] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, string>>(() => loadSavedAnswers());
   const [showHelp, setShowHelp] = useState(false);
   const [recommendation, setRecommendation] = useState<AIRecommendation | null>(null);
   const [isRecommending, setIsRecommending] = useState(false);
   const [recommendNotice, setRecommendNotice] = useState("");
 
-  const step = INTERVIEW_STEPS[stepIndex];
-  const isLastStep = stepIndex === INTERVIEW_STEPS.length - 1;
-  const value = answers[step.field];
-  const isNextDisabled = step.required && value.trim().length === 0;
-
-  // 현재 질문에 쓸 선택지: AI 생성분이 있으면 그것, 없으면 기본 선택지
-  const currentOptions = step.type === "choice" ? dynamicOptions[step.field] ?? step.options ?? [] : [];
-
-  // 선택형 질문에 도달하면 프로젝트에 맞는 선택지를 AI로 생성 (자동 재시도 포함)
+  // 질문 단계에 진입했는데 질문이 없으면 AI로 생성 (자동 재시도 포함)
   useEffect(() => {
-    if (step.type !== "choice" || phase !== "questions") return;
-    if (dynamicOptions[step.field] || optionsLoadingField === step.field) return;
-    if (idea.trim().length === 0) return;
+    if (phase !== "questions" || questions.length > 0 || idea.trim().length === 0) return;
     let cancelled = false;
     (async () => {
-      setOptionsLoadingField(step.field);
-      setOptionsFailedField((prev) => (prev === step.field ? null : prev));
+      setQuestionsLoading(true);
+      setQuestionsFailed(false);
       try {
-        const opts = await fetchQuestionOptions(idea, step.field, step.question);
-        if (!cancelled) setDynamicOptions((prev) => ({ ...prev, [step.field]: opts }));
+        const project = loadCurrentProject();
+        const generated = await fetchInterviewQuestions(idea, project.analysis ?? null);
+        if (!cancelled) {
+          setQuestions(generated);
+          updateCurrentProject({ interviewQuestions: generated });
+        }
       } catch {
-        // 자동 재시도까지 실패하면 실패 상태 표시 → 사용자가 직접 다시 시도 가능
-        if (!cancelled) setOptionsFailedField(step.field);
+        if (!cancelled) setQuestionsFailed(true);
       } finally {
-        if (!cancelled) setOptionsLoadingField((prev) => (prev === step.field ? null : prev));
+        if (!cancelled) setQuestionsLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step.field, step.type, phase, idea, optionsRetryKey]);
+  }, [phase, idea, questionsRetryKey]);
 
-  const setValue = (v: string) => setAnswers((prev) => ({ ...prev, [step.field]: v }));
+  const totalSteps = questions.length;
+  const stepIndex = qParam !== null && totalSteps > 0 ? Math.min(Math.max(0, Number(qParam) || 0), totalSteps - 1) : 0;
+  const step: GeneratedQuestion | undefined = questions[stepIndex];
+  const isLastStep = totalSteps > 0 && stepIndex === totalSteps - 1;
+  const value = step ? answers[step.id] ?? "" : "";
+  const isNextDisabled = step ? step.required && value.trim().length === 0 : true;
 
-  const persist = (nextStep: number, nextAnswers: InterviewAnswers) => {
+  // 현재 질문의 선택지 (질문 생성 시 AI가 함께 만들어 옴)
+  const currentOptions = step && step.type === "choice" ? step.options : [];
+
+  const setValue = (v: string) => {
+    if (!step) return;
+    setAnswers((prev) => ({ ...prev, [step.id]: v }));
+  };
+
+  const persist = (nextStep: number, nextAnswers: Record<string, string>) => {
     updateCurrentProject({
       progress: 15,
       interviewStep: nextStep,
@@ -1840,7 +1524,7 @@ function InterviewPage() {
         status: "planning",
         step: "planning-summary",
         progress: 25,
-        interviewStep: INTERVIEW_STEPS.length,
+        interviewStep: totalSteps,
         interviewAnswers: answers,
         prd: null, // 답변이 바뀌었을 수 있으므로 기획서는 새로 생성
       });
@@ -1866,19 +1550,19 @@ function InterviewPage() {
     setRecommendation(null);
     setRecommendNotice("");
     try {
-      const result = await fetchAIRecommendation(idea, stepIndex, answers);
+      if (!step) return;
+      const result = await fetchAIRecommendation(idea, step, stepIndex, answers);
       setRecommendation(result);
     } catch {
-      // Fallback: API 실패 시 Mock 추천 표시
-      setRecommendation(getMockRecommendation(idea, stepIndex));
-      setRecommendNotice("AI 추천 연결에 실패했습니다. 임시 추천을 표시합니다.");
+      // AI 실패 시 가짜 추천 대신 안내만 표시 (자동 재시도까지 실패한 경우)
+      setRecommendNotice("AI 추천을 불러오지 못했어요. 잠시 후 다시 시도해주세요.");
     } finally {
       setIsRecommending(false);
     }
   };
 
   const handleApplyRecommendation = () => {
-    if (!recommendation) return;
+    if (!recommendation || !step) return;
 
     let valueToApply = recommendation.applyValue;
     if (step.type === "choice" && currentOptions.length > 0 && !currentOptions.includes(valueToApply)) {
@@ -1891,7 +1575,7 @@ function InterviewPage() {
 
     // 텍스트 질문: 사용자가 쓴 내용을 절대 지우지 않고, 한 줄 띄우고 AI 추천을 덧붙임
     if (step.type === "text") {
-      const existing = answers[step.field].trimEnd();
+      const existing = (answers[step.id] ?? "").trimEnd();
       if (existing.length > 0) {
         const bulletItems = valueToApply
           .split(/[,、]/)
@@ -1904,7 +1588,7 @@ function InterviewPage() {
       }
     }
 
-    const applied = { ...answers, [step.field]: valueToApply };
+    const applied = { ...answers, [step.id]: valueToApply };
     setAnswers(applied);
     persist(stepIndex + 1, applied);
   };
@@ -1924,15 +1608,24 @@ function InterviewPage() {
                 <span className="h-8 w-8 animate-spin rounded-full border-[3px] border-primary/20 border-t-primary" aria-hidden="true" />
                 <p className="text-[14px] text-ink-body">답변을 바탕으로 아이디어를 만드는 중입니다...</p>
               </div>
+            ) : ideaFailed ? (
+              <div className="flex flex-col items-center gap-4 py-12 text-center">
+                <p className="text-[15px] font-semibold text-ink-title">아이디어를 불러오지 못했어요.</p>
+                <p className="text-[13px] text-ink-body">잠시 후 다시 시도해주세요.</p>
+                <div className="flex gap-2.5">
+                  <button onClick={() => setIdeaFailed(false)} className="flex h-[46px] items-center justify-center rounded-2xl border border-[#E5E8EB] bg-white px-5 text-[14px] font-semibold text-ink-body hover:border-[#D1D5DB]">
+                    답변 다시 하기
+                  </button>
+                  <button onClick={() => void runIdeaSuggest()} className="flex h-[46px] items-center justify-center gap-1.5 rounded-2xl bg-primary px-5 text-[14px] font-semibold text-white transition-transform hover:scale-[1.02]">
+                    <RefreshCw className="h-4 w-4" />
+                    다시 시도
+                  </button>
+                </div>
+              </div>
             ) : ideaOptions ? (
               <>
                 <h1 className="mt-1 text-[20px] font-bold text-ink-title">이런 서비스는 어떠세요?</h1>
                 <p className="mt-1 text-[13px] text-ink-body">마음에 드는 아이디어를 선택하면 인터뷰를 시작합니다.</p>
-                {!ideaFromAI && (
-                  <p className="mt-3 rounded-xl border border-[#FDE68A] bg-[#FEF9C3] px-3.5 py-2.5 text-[12.5px] font-medium text-[#92400E]">
-                    AI 추천을 못 불러와서 예시 아이디어를 보여드리고 있어요. 아래에서 다시 추천받아보세요.
-                  </p>
-                )}
                 <div className="mt-4 flex flex-col gap-2.5">
                   {ideaOptions.map((option, index) => (
                     <button
@@ -1952,7 +1645,7 @@ function InterviewPage() {
                   <RefreshCw className="h-4 w-4" />
                   다른 아이디어 추천받기
                 </button>
-                <button onClick={() => { setIdeaOptions(null); setIdeaFromAI(false); }} className="mt-3 text-[13px] font-medium text-ink-body hover:text-ink-title">
+                <button onClick={() => { setIdeaOptions(null); setIdeaFailed(false); }} className="mt-3 text-[13px] font-medium text-ink-body hover:text-ink-title">
                   ← 답변 다시 하기
                 </button>
               </>
@@ -2117,6 +1810,35 @@ function InterviewPage() {
     );
   }
 
+  // ===== 질문 로딩/실패: AI가 질문을 생성하는 동안 =====
+  if (questionsLoading || (questions.length === 0 && !questionsFailed)) {
+    return (
+      <main className="flex flex-1 flex-col items-center justify-center gap-4 px-5 pt-4 pb-[140px] animate-fadeIn md:pb-12">
+        <span className="h-10 w-10 animate-spin rounded-full border-[3px] border-primary/20 border-t-primary" aria-hidden="true" />
+        <div className="text-center">
+          <p className="text-[16px] font-semibold text-ink-title">서비스에 맞는 질문을 준비하고 있어요.</p>
+          <p className="mt-1 text-[14px] text-ink-body">입력하신 내용을 바탕으로 꼭 필요한 질문만 만들고 있습니다. (예상 5~15초)</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (questionsFailed || !step) {
+    return (
+      <main className="flex flex-1 flex-col items-center justify-center gap-4 px-5 pt-4 pb-[140px] animate-fadeIn md:pb-12">
+        <p className="text-[16px] font-semibold text-ink-title">질문을 불러오지 못했어요.</p>
+        <p className="text-[14px] text-ink-body">잠시 후 다시 시도해주세요.</p>
+        <button
+          onClick={() => { setQuestionsFailed(false); setQuestionsRetryKey((k) => k + 1); }}
+          className="flex h-[48px] items-center justify-center gap-1.5 rounded-2xl bg-primary px-6 text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)]"
+        >
+          <RefreshCw className="h-4 w-4" />
+          다시 시도
+        </button>
+      </main>
+    );
+  }
+
   return (
     <main className="flex flex-1 flex-col px-5 pt-4 pb-[140px] animate-fadeIn md:items-center md:pt-10 md:pb-12">
       <div className="flex w-full flex-col gap-4 md:max-w-[680px]">
@@ -2136,10 +1858,10 @@ function InterviewPage() {
               <span className="font-semibold text-ink-body">
                 STEP {stepIndex + 1} <span className="mx-1 text-[#D1D5DB]" aria-hidden="true">·</span> {step.label}
               </span>
-              <span className="font-bold text-primary">{INTERVIEW_PROGRESS[stepIndex]}%</span>
+              <span className="font-bold text-primary">{Math.round(((stepIndex + 1) / totalSteps) * 100)}%</span>
             </div>
             <div className="mt-2">
-              <ProgressBar progress={INTERVIEW_PROGRESS[stepIndex]} />
+              <ProgressBar progress={Math.round(((stepIndex + 1) / totalSteps) * 100)} />
             </div>
           </div>
 
@@ -2149,56 +1871,31 @@ function InterviewPage() {
           {/* 입력 영역 */}
           {step.type === "text" ? (
             <textarea
-              key={step.field}
+              key={step.id}
               value={value}
               onChange={(e) => setValue(e.target.value)}
               placeholder={step.placeholder}
               className="mt-4 min-h-[110px] w-full resize-none rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-base leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           ) : (
-            <div className="mt-4">
-              {optionsLoadingField === step.field && !dynamicOptions[step.field] ? (
-                // 선택지 생성 중
-                <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-[#E5E8EB] py-10">
-                  <span className="h-6 w-6 animate-spin rounded-full border-2 border-primary/30 border-t-primary" aria-hidden="true" />
-                  <p className="text-[13px] font-medium text-ink-body">이 서비스에 맞는 선택지를 준비하고 있어요...</p>
-                </div>
-              ) : (
-              <>
-              {optionsFailedField === step.field && !dynamicOptions[step.field] && (
-                // 자동 재시도까지 실패 → 다시 시도 버튼 + 아래에 기본 선택지 제공 (막히지 않게)
-                <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-[#FDE68A] bg-[#FEF9C3] px-3.5 py-2.5">
-                  <p className="text-[12.5px] font-medium text-[#92400E]">맞춤 선택지를 못 불러왔어요. 아래 기본 선택지를 쓰거나 다시 시도해보세요.</p>
+            <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              {currentOptions.map((option) => {
+                const isSelected = value === option;
+                return (
                   <button
-                    onClick={() => { setOptionsFailedField(null); setOptionsRetryKey((k) => k + 1); }}
-                    className="flex h-8 shrink-0 items-center gap-1 rounded-lg bg-[#92400E] px-2.5 text-[12px] font-semibold text-white"
+                    key={option}
+                    onClick={() => setValue(option)}
+                    className={
+                      "flex items-center justify-center rounded-2xl border px-4 py-3.5 text-center text-[15px] font-medium transition-colors duration-200 " +
+                      (isSelected
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]")
+                    }
                   >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    다시 시도
+                    {option}
                   </button>
-                </div>
-              )}
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                {currentOptions.map((option) => {
-                  const isSelected = value === option;
-                  return (
-                    <button
-                      key={option}
-                      onClick={() => setValue(option)}
-                      className={
-                        "flex items-center justify-center rounded-2xl border px-4 py-3.5 text-center text-[15px] font-medium transition-colors duration-200 " +
-                        (isSelected
-                          ? "border-primary bg-primary/5 text-primary"
-                          : "border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]")
-                      }
-                    >
-                      {option}
-                    </button>
-                  );
-                })}
-              </div>
-              </>
-              )}
+                );
+              })}
             </div>
           )}
 
@@ -2343,7 +2040,7 @@ interface GeneratePRDResponse {
 
 async function fetchGeneratePRD(
   idea: string,
-  answers: InterviewAnswers,
+  qa: { question: string; answer: string }[],
   instruction?: string,
   currentPrd?: ProjectPRD
 ): Promise<ProjectPRD> {
@@ -2352,7 +2049,7 @@ async function fetchGeneratePRD(
   const response = await fetch("/api/project/generate-prd", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ idea, brandName, answers, instruction, currentPrd }),
+    body: JSON.stringify({ idea, brandName, qa, instruction, currentPrd }),
   });
 
   if (!response.ok) throw new Error(`API error: ${response.status}`);
@@ -2360,6 +2057,19 @@ async function fetchGeneratePRD(
   const data = (await response.json()) as GeneratePRDResponse;
   if (!data.success || !data.project) throw new Error(data.error ?? "기획서 생성 실패");
   return data.project;
+}
+
+// 저장된 인터뷰 질문 + 답변을 질문/답변 쌍으로 변환 (기획서 생성용)
+function buildInterviewQA(): { question: string; answer: string }[] {
+  const project = loadCurrentProject();
+  const questions = Array.isArray(project.interviewQuestions) ? (project.interviewQuestions as GeneratedQuestion[]) : [];
+  const answers =
+    typeof project.interviewAnswers === "object" && project.interviewAnswers !== null
+      ? (project.interviewAnswers as Record<string, string>)
+      : {};
+  return questions
+    .map((q) => ({ question: q.question, answer: (answers[q.id] ?? "").trim() }))
+    .filter((item) => item.answer.length > 0);
 }
 
 function loadSavedPRD(): ProjectPRD | null {
@@ -2473,14 +2183,7 @@ type PRDStatus = "ready" | "loading" | "error";
 
 function SummaryPage() {
   const [idea] = useState(() => loadCurrentIdea());
-  const [answers] = useState<InterviewAnswers>(() => {
-    const project = loadCurrentProject();
-    const saved =
-      typeof project.interviewAnswers === "object" && project.interviewAnswers !== null
-        ? (project.interviewAnswers as Partial<InterviewAnswers>)
-        : {};
-    return { ...EMPTY_ANSWERS, ...saved };
-  });
+  const [qa] = useState<{ question: string; answer: string }[]>(() => buildInterviewQA());
   const [prd, setPrd] = useState<ProjectPRD | null>(() => loadSavedPRD());
   const [status, setStatus] = useState<PRDStatus>(() => (loadSavedPRD() ? "ready" : "loading"));
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -2497,7 +2200,7 @@ function SummaryPage() {
       try {
         const pending = pendingEditRef.current;
         pendingEditRef.current = null;
-        const generated = await fetchGeneratePRD(idea, answers, pending?.instruction, pending?.prd);
+        const generated = await fetchGeneratePRD(idea, qa, pending?.instruction, pending?.prd);
         if (cancelled) return;
         savePRD(generated);
         setPrd(generated);
@@ -2510,7 +2213,7 @@ function SummaryPage() {
     return () => {
       cancelled = true;
     };
-  }, [prd, status, idea, answers]);
+  }, [prd, status, idea, qa]);
 
   const handleRetry = () => setStatus("loading");
 
@@ -3859,60 +3562,6 @@ function MockupPage() {
   );
 }
 
-/* ---------- 페이지: Project Detail ---------- */
-
-function ProjectDetailPage() {
-  const { projectId } = useParams();
-  const project = RECENT_PROJECTS.find((p) => p.id === projectId);
-
-  if (!project) {
-    return (
-      <main className="flex flex-1 flex-col items-center justify-center gap-3 px-5 py-3 animate-fadeIn">
-        <p className="text-[15px] text-ink-body">프로젝트를 찾을 수 없습니다.</p>
-        <BackButton label="Home으로 돌아가기" />
-      </main>
-    );
-  }
-
-  return (
-    <main className="flex flex-1 flex-col gap-4 px-5 pt-4 pb-[140px] animate-fadeIn md:mx-auto md:w-full md:max-w-[640px] md:pt-8 md:pb-10">
-      <BackButton label="Home으로 돌아가기" />
-
-      <section className="rounded-[24px] border border-[#ECEEF2] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
-        <div className="flex items-center gap-3">
-          <div
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl shadow-[0_6px_14px_-4px_rgba(79,107,255,0.4)]"
-            style={{ background: `linear-gradient(135deg, ${project.colorFrom}, ${project.colorTo})` }}
-          >
-            <ProjectIcon type={project.icon} />
-          </div>
-          <div className="min-w-0">
-            <h1 className="truncate text-[20px] font-bold text-ink-title">{project.name}</h1>
-            <p className="mt-0.5 text-[12px] text-ink-body">마지막 수정 {project.updatedAt}</p>
-          </div>
-        </div>
-
-        <div className="mt-6">
-          <div className="flex items-center justify-between">
-            <span className="text-[13px] font-semibold text-ink-body">진행률</span>
-            <span className="text-[13px] font-bold text-primary">{project.progress}%</span>
-          </div>
-          <div className="mt-2">
-            <ProgressBar progress={project.progress} />
-          </div>
-        </div>
-
-        <div className="mt-5 flex items-center justify-between">
-          <span className="text-[13px] font-semibold text-ink-body">현재 단계</span>
-          <span className="rounded-badge bg-[#F3F4F6] px-3 py-1 text-[12px] font-medium text-ink-title">
-            {project.phase}
-          </span>
-        </div>
-      </section>
-    </main>
-  );
-}
-
 /* ---------- 페이지: Placeholder (프로젝트 목록 / 오늘 할 일 / 설정) ---------- */
 
 function PlaceholderPage({ title, description }: { title: string; description: string }) {
@@ -4090,7 +3739,6 @@ export default function App() {
           <Route path="/project/interview" element={<InterviewPage />} />
           <Route path="/project/summary" element={<SummaryPage />} />
           <Route path="/project/mockup" element={<MockupPage />} />
-          <Route path="/project/:projectId" element={<ProjectDetailPage />} />
           <Route path="/projects" element={<PlaceholderPage title="프로젝트 목록" description="프로젝트 목록 화면을 준비 중입니다." />} />
           <Route path="/todo" element={<PlaceholderPage title="오늘 할 일" description="할 일 화면을 준비 중입니다." />} />
           <Route path="/setting" element={<PlaceholderPage title="설정" description="설정 화면을 준비 중입니다." />} />
