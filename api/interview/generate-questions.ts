@@ -214,7 +214,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           label: typeof q.label === "string" ? cleanText(q.label) : `질문 ${index + 1}`,
           question: typeof q.question === "string" ? cleanText(q.question) : "",
           type: finalType,
-          multiSelect: finalType === "choice" && q.multiSelect === true,
+          multiSelect: finalType === "choice", // 모든 선택형 질문은 여러 개 선택 가능
           placeholder: typeof q.placeholder === "string" ? cleanText(q.placeholder) : "",
           options: type === "choice" && options.length >= 2 ? options : [],
           help: typeof q.help === "string" ? cleanText(q.help) : "",
