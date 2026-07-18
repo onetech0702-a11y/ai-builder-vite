@@ -29,6 +29,7 @@ interface GeneratedQuestion {
   label: string;
   question: string;
   type: "text" | "choice";
+  multiSelect: boolean;
   placeholder: string;
   options: string[];
   help: string;
@@ -86,6 +87,11 @@ const SYSTEM_PROMPT = `당신은 OneTech AI Builder의 서비스 기획 인터�
 - "text": 사용자가 자유롭게 적는 질문 (대상, 핵심 흐름, 마지막 추가 질문 등)
 - "choice": 선택지에서 고르는 질문. 선택지는 이 서비스에 맞는 구체적인 항목이어야 합니다. 각 선택지는 12자 이내. 마지막에 "잘 모르겠어요" 같은 선택지 1개 포함.
 
+choice 질문은 multiSelect 값으로 단일/다중 선택을 구분합니다:
+- multiSelect: false → 하나만 고르는 질문 (예: "웹과 앱 중 무엇으로 만들까요?")
+- multiSelect: true → 여러 개 고를 수 있는 질문 (예: "어떤 정보를 고려할까요?", "필요한 기능을 모두 골라주세요")
+질문 내용상 여러 개를 고르는 게 자연스러우면 반드시 multiSelect를 true로 하세요. 질문 문장에 "모두", "여러", "중복" 같은 표현을 넣지 말고, multiSelect 값으로만 표현하세요. text 질문은 multiSelect를 false로 하세요.
+
 반드시 JSON으로만 응답하세요. 마크다운이나 다른 텍스트를 붙이지 마세요.
 
 형식:
@@ -96,6 +102,7 @@ const SYSTEM_PROMPT = `당신은 OneTech AI Builder의 서비스 기획 인터�
       "label": "짧은 제목 (예: 사용 대상)",
       "question": "실제 질문 문장",
       "type": "text",
+      "multiSelect": false,
       "placeholder": "text일 때 입력 예시 (choice면 빈 문자열)",
       "options": ["choice일 때 선택지 3~4개 (text면 빈 배열)"],
       "help": "이 질문이 왜 필요한지 쉬운 한 문장 설명",
@@ -201,11 +208,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       .map((q, index): GeneratedQuestion => {
         const type = q.type === "choice" ? "choice" : "text";
         const options = type === "choice" ? toStringArray(q.options, 5) : [];
+        const finalType: "text" | "choice" = type === "choice" && options.length < 2 ? "text" : type;
         return {
           id: typeof q.id === "string" && q.id.trim() ? cleanText(q.id) : `q${index + 1}`,
           label: typeof q.label === "string" ? cleanText(q.label) : `질문 ${index + 1}`,
           question: typeof q.question === "string" ? cleanText(q.question) : "",
-          type: type === "choice" && options.length < 2 ? "text" : type,
+          type: finalType,
+          multiSelect: finalType === "choice" && q.multiSelect === true,
           placeholder: typeof q.placeholder === "string" ? cleanText(q.placeholder) : "",
           options: type === "choice" && options.length >= 2 ? options : [],
           help: typeof q.help === "string" ? cleanText(q.help) : "",
@@ -222,6 +231,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (last.type === "choice") {
         last.type = "text";
         last.options = [];
+        last.multiSelect = false;
       }
     }
 

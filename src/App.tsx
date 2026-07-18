@@ -617,11 +617,15 @@ function ProjectCreatePage() {
 /* ---------- AI 생성 인터뷰 질문 ----------
  * 질문/선택지/설명은 하드코딩하지 않고, 사용자가 입력한 서비스에 맞춰 AI가 실시간 생성한다.
  */
+// 다중 선택 답변 구분자 (선택지 라벨에 콤마가 있어도 안전하도록 콤마 대신 사용)
+const MULTI_SEP = " || ";
+
 interface GeneratedQuestion {
   id: string;
   label: string;
   question: string;
   type: "text" | "choice";
+  multiSelect?: boolean;
   placeholder: string;
   options: string[];
   help: string;
@@ -1500,6 +1504,19 @@ function InterviewPage() {
     setAnswers((prev) => ({ ...prev, [step.id]: v }));
   };
 
+  // 다중 선택 질문: 이미 있으면 빼고, 없으면 추가 (구분자로 저장)
+  const toggleMultiValue = (option: string) => {
+    if (!step) return;
+    const current = (answers[step.id] ?? "")
+      .split(MULTI_SEP)
+      .map((v) => v.trim())
+      .filter((v) => v.length > 0);
+    const next = current.includes(option)
+      ? current.filter((v) => v !== option)
+      : [...current, option];
+    setAnswers((prev) => ({ ...prev, [step.id]: next.join(MULTI_SEP) }));
+  };
+
   const persist = (nextStep: number, nextAnswers: Record<string, string>) => {
     updateCurrentProject({
       progress: 15,
@@ -1565,11 +1582,19 @@ function InterviewPage() {
     if (!recommendation || !step) return;
 
     let valueToApply = recommendation.applyValue;
-    if (step.type === "choice" && currentOptions.length > 0 && !currentOptions.includes(valueToApply)) {
-      const matched = currentOptions.find(
-        (option) => valueToApply.includes(option) || recommendation.answer.includes(option)
-      );
-      if (matched) valueToApply = matched;
+    if (step.type === "choice" && currentOptions.length > 0) {
+      if (step.multiSelect) {
+        // 다중 선택: 추천 답변에 언급된 선택지를 모두 골라 콤마로 합침
+        const picked = currentOptions.filter(
+          (option) => valueToApply.includes(option) || recommendation.answer.includes(option)
+        );
+        if (picked.length > 0) valueToApply = picked.join(MULTI_SEP);
+      } else if (!currentOptions.includes(valueToApply)) {
+        const matched = currentOptions.find(
+          (option) => valueToApply.includes(option) || recommendation.answer.includes(option)
+        );
+        if (matched) valueToApply = matched;
+      }
     }
     if (valueToApply.trim().length === 0) return; // 거부 응답(applyValue 없음)은 적용하지 않음
 
@@ -1878,25 +1903,36 @@ function InterviewPage() {
               className="mt-4 min-h-[110px] w-full resize-none rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-base leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           ) : (
-            <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-              {currentOptions.map((option) => {
-                const isSelected = value === option;
-                return (
-                  <button
-                    key={option}
-                    onClick={() => setValue(option)}
-                    className={
-                      "flex items-center justify-center rounded-2xl border px-4 py-3.5 text-center text-[15px] font-medium transition-colors duration-200 " +
-                      (isSelected
-                        ? "border-primary bg-primary/5 text-primary"
-                        : "border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]")
-                    }
-                  >
-                    {option}
-                  </button>
-                );
-              })}
-            </div>
+            <>
+              {step.multiSelect && (
+                <p className="mt-3 text-[12.5px] font-medium text-primary">여러 개 선택할 수 있어요.</p>
+              )}
+              <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                {currentOptions.map((option) => {
+                  const selectedValues = value.split(MULTI_SEP).map((v) => v.trim()).filter((v) => v.length > 0);
+                  const isSelected = step.multiSelect ? selectedValues.includes(option) : value === option;
+                  return (
+                    <button
+                      key={option}
+                      onClick={() => (step.multiSelect ? toggleMultiValue(option) : setValue(option))}
+                      className={
+                        "flex items-center justify-center gap-2 rounded-2xl border px-4 py-3.5 text-center text-[15px] font-medium transition-colors duration-200 " +
+                        (isSelected
+                          ? "border-primary bg-primary/5 text-primary"
+                          : "border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]")
+                      }
+                    >
+                      {step.multiSelect && (
+                        <span className={"flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors " + (isSelected ? "border-primary bg-primary text-white" : "border-[#CBD5E1] bg-white")}>
+                          {isSelected && <Check className="h-3 w-3" />}
+                        </span>
+                      )}
+                      {option}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
           )}
 
           {/* 잘 모르겠습니다 / AI 추천받기 */}
@@ -2068,7 +2104,12 @@ function buildInterviewQA(): { question: string; answer: string }[] {
       ? (project.interviewAnswers as Record<string, string>)
       : {};
   return questions
-    .map((q) => ({ question: q.question, answer: (answers[q.id] ?? "").trim() }))
+    .map((q) => {
+      // 다중 선택 답변은 내부 구분자(||)를 읽기 좋은 형태로 바꿔서 전달
+      const raw = (answers[q.id] ?? "").trim();
+      const answer = q.multiSelect ? raw.split(MULTI_SEP).map((v) => v.trim()).filter(Boolean).join(", ") : raw;
+      return { question: q.question, answer };
+    })
     .filter((item) => item.answer.length > 0);
 }
 
