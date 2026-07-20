@@ -66,6 +66,34 @@ function createUserProject(idea: string): UserProject {
   };
 }
 
+// 목록에 넣지 않고 현재 작업 중인 프로젝트로만 저장한다.
+// (아이디어가 아직 없는 단계에서 "이름 없는 서비스"가 목록에 쌓이는 걸 방지)
+function setCurrentProjectOnly(project: UserProject) {
+  localStorage.setItem(CURRENT_PROJECT_KEY, JSON.stringify(project));
+}
+
+// 현재 프로젝트를 목록에도 등록한다. 이미 목록에 있으면 중복 추가하지 않는다.
+function registerCurrentProjectInList() {
+  try {
+    const raw = localStorage.getItem(CURRENT_PROJECT_KEY);
+    if (!raw) return;
+    const current = JSON.parse(raw) as UserProject;
+    if (!current?.id || !(current.idea ?? "").trim()) return;
+
+    let list: UserProject[] = [];
+    try {
+      list = JSON.parse(localStorage.getItem(PROJECTS_LIST_KEY) ?? "[]") as UserProject[];
+      if (!Array.isArray(list)) list = [];
+    } catch {
+      list = [];
+    }
+    if (list.some((p) => p.id === current.id)) return;
+    localStorage.setItem(PROJECTS_LIST_KEY, JSON.stringify([current, ...list].slice(0, PROJECTS_LIST_MAX)));
+  } catch {
+    // 저장 실패는 무시
+  }
+}
+
 function saveUserProject(project: UserProject) {
   localStorage.setItem(CURRENT_PROJECT_KEY, JSON.stringify(project));
 
@@ -160,7 +188,8 @@ function loadRecentUserProjects(): UserProjectEntry[] {
     const list = raw ? (JSON.parse(raw) as UserProjectEntry[]) : [];
     if (!Array.isArray(list)) return [];
     return list
-      .filter((p) => typeof p.id === "string")
+      // 아이디어가 아직 없는 빈 프로젝트는 목록에 보여주지 않는다
+      .filter((p) => typeof p.id === "string" && ((p.idea ?? "").trim().length > 0 || (p.title ?? "").trim().length > 0))
       .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
       .slice(0, 3);
   } catch {
@@ -300,7 +329,8 @@ function HomePage() {
 
   // 아이디어가 없는 사용자: AI가 아이디어를 함께 찾는 인터뷰로 시작
   const handleUnknown = () => {
-    saveUserProject(createUserProject(""));
+    // 아이디어를 아직 고르기 전이라 목록에는 넣지 않는다 (빈 프로젝트 방지)
+    setCurrentProjectOnly(createUserProject(""));
     navigate("/project/interview");
   };
 
@@ -1414,6 +1444,8 @@ function InterviewPage() {
   const handlePickIdea = (picked: string) => {
     // 아이디어가 바뀌면 이전 질문/답변은 버리고 새 아이디어에 맞게 다시 생성한다
     updateCurrentProject({ idea: picked, title: picked, ideaGenerated: true, ideaCategory: dAnswers.category, interviewQuestions: null, interviewAnswers: {}, interviewStep: 1 });
+    // 아이디어가 정해진 시점에 목록에 등록한다
+    registerCurrentProjectInList();
     setIdea(picked);
     setPhase("brand");
     window.scrollTo(0, 0);
@@ -1905,36 +1937,26 @@ function InterviewPage() {
               className="mt-4 min-h-[110px] w-full resize-none rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-base leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           ) : (
-            <>
-              {isMulti && (
-                <p className="mt-3 text-[12.5px] font-medium text-primary">여러 개 선택할 수 있어요.</p>
-              )}
-              <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                {currentOptions.map((option) => {
-                  const selectedValues = value.split(MULTI_SEP).map((v) => v.trim()).filter((v) => v.length > 0);
-                  const isSelected = isMulti ? selectedValues.includes(option) : value === option;
-                  return (
-                    <button
-                      key={option}
-                      onClick={() => (isMulti ? toggleMultiValue(option) : setValue(option))}
-                      className={
-                        "flex items-center justify-center gap-2 rounded-2xl border px-4 py-3.5 text-center text-[15px] font-medium transition-colors duration-200 " +
-                        (isSelected
-                          ? "border-primary bg-primary/5 text-primary"
-                          : "border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]")
-                      }
-                    >
-                      {isMulti && (
-                        <span className={"flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors " + (isSelected ? "border-primary bg-primary text-white" : "border-[#CBD5E1] bg-white")}>
-                          {isSelected && <Check className="h-3 w-3" />}
-                        </span>
-                      )}
-                      {option}
-                    </button>
-                  );
-                })}
-              </div>
-            </>
+            <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              {currentOptions.map((option) => {
+                const selectedValues = value.split(MULTI_SEP).map((v) => v.trim()).filter((v) => v.length > 0);
+                const isSelected = isMulti ? selectedValues.includes(option) : value === option;
+                return (
+                  <button
+                    key={option}
+                    onClick={() => (isMulti ? toggleMultiValue(option) : setValue(option))}
+                    className={
+                      "flex items-center justify-center rounded-2xl border px-4 py-3.5 text-center text-[15px] font-medium transition-colors duration-200 " +
+                      (isSelected
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]")
+                    }
+                  >
+                    {option}
+                  </button>
+                );
+              })}
+            </div>
           )}
 
           {/* 잘 모르겠습니다 / AI 추천받기 */}
