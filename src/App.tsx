@@ -791,9 +791,6 @@ function ReviewSection({ title, items, muted }: { title: string; items: string[]
   );
 }
 
-// 다중 선택 답변 구분자 (선택지 라벨에 콤마가 있어도 안전하도록 콤마 대신 사용)
-const MULTI_SEP = " || ";
-
 async function fetchBrandNames(idea: string): Promise<string[]> {
   const response = await fetch("/api/interview/recommend", {
     method: "POST",
@@ -1517,7 +1514,8 @@ function InterviewPage() {
   const [dynConfidence, setDynConfidence] = useState<DynConfidence>(() => loadDynConfidence());
   const [dynRecommendation, setDynRecommendation] = useState<DynRecommendation | null>(null);
 
-  const [currentAnswer, setCurrentAnswer] = useState("");
+  const [selectedKw, setSelectedKw] = useState<string[]>([]); // 선택한 키워드들
+  const [noteText, setNoteText] = useState(""); // 직접 입력 / AI 추천 내용
   const [qLoading, setQLoading] = useState(false);   // 다음 질문 생성 중
   const [qFailed, setQFailed] = useState(false);      // 질문 생성 실패
   const [qRetryKey, setQRetryKey] = useState(0);
@@ -1555,7 +1553,8 @@ function InterviewPage() {
         setDynConfidence(result.confidence);
         setDynQuestion(result.nextQuestion);
         setDynRecommendation(result.recommendation.enabled ? result.recommendation : null);
-        setCurrentAnswer("");
+        setSelectedKw([]);
+        setNoteText("");
         // 저장 (새로고침/오류에도 유지)
         updateCurrentProject({
           progress: 15,
@@ -1591,26 +1590,28 @@ function InterviewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, idea, qRetryKey]);
 
-  const isAnswerEmpty = currentAnswer.trim().length === 0;
+  const isAnswerEmpty = selectedKw.length === 0 && noteText.trim().length === 0;
 
   // 선택 키워드가 있는 질문은 항상 여러 개 선택 가능 (AI가 allowMultiple을 false로 줘도 강제)
   const keywordMulti = !!dynQuestion && dynQuestion.keywords.length > 0;
 
-  // 선택 키워드 토글 (여러 개 선택, 직접 입력과 공존)
+  // 선택 키워드 토글 (여러 개 선택 가능, 직접 입력과 공존)
   const toggleKeyword = (label: string) => {
-    if (!dynQuestion) return;
-    const parts = currentAnswer.split(MULTI_SEP).map((v) => v.trim()).filter((v) => v.length > 0);
-    const next = parts.includes(label) ? parts.filter((v) => v !== label) : [...parts, label];
-    setCurrentAnswer(next.join(MULTI_SEP));
+    setSelectedKw((prev) => (prev.includes(label) ? prev.filter((v) => v !== label) : [...prev, label]));
   };
 
-  const selectedKeywords = currentAnswer.split(MULTI_SEP).map((v) => v.trim()).filter((v) => v.length > 0);
+  // 선택 키워드 + 직접 입력을 하나의 답변 문자열로 합친다
+  const composeAnswer = (): string => {
+    const kw = selectedKw.join(", ");
+    const note = noteText.trim();
+    if (kw && note) return `${kw}\n${note}`;
+    return kw || note;
+  };
 
   // 답변 제출 → 히스토리에 추가하고 다음 질문 요청
   const submitAnswer = () => {
     if (!dynQuestion || isAnswerEmpty || qLoading) return;
-    const readable = keywordMulti ? selectedKeywords.join(", ") : currentAnswer.trim();
-    const nextHistory = [...dynHistory, { question: dynQuestion.question, answer: readable }];
+    const nextHistory = [...dynHistory, { question: dynQuestion.question, answer: composeAnswer() }];
     setDynHistory(nextHistory);
     void requestNextQuestion(nextHistory, dynProjectState, false);
     window.scrollTo(0, 0);
@@ -1645,13 +1646,15 @@ function InterviewPage() {
     })();
   };
 
-  // AI 추천 적용: 기존 입력을 덮어쓰지 않고 아래에 덧붙인다
+  // AI 추천 적용: 선택한 키워드는 그대로 두고, 직접 입력란에만 추천 내용을 덧붙인다
   const applyRecommendation = () => {
     if (!dynRecommendation) return;
     const rec = dynRecommendation.content.trim();
     if (rec.length === 0) return;
-    const existing = currentAnswer.trim();
-    setCurrentAnswer(existing.length > 0 ? `${existing}\n\nAI 추천\n${rec}` : rec);
+    setNoteText((prev) => {
+      const existing = prev.trim();
+      return existing.length > 0 ? `${existing}\n\nAI 추천\n${rec}` : `AI 추천\n${rec}`;
+    });
     setDynRecommendation(null);
   };
 
@@ -1675,7 +1678,8 @@ function InterviewPage() {
       allowDirectInput: true,
       placeholder: "답변을 입력해주세요",
     });
-    setCurrentAnswer(prev.answer);
+    setSelectedKw([]);
+    setNoteText(prev.answer);
     setDynRecommendation(null);
     updateCurrentProject({ dynInterview: { question: null, history: trimmedHistory, projectState: dynProjectState, confidence: dynConfidence } });
     window.scrollTo(0, 0);
@@ -1996,7 +2000,7 @@ function InterviewPage() {
                 )}
                 <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                   {dynQuestion.keywords.map((kw) => {
-                    const isSelected = selectedKeywords.includes(kw.label);
+                    const isSelected = selectedKw.includes(kw.label);
                     return (
                       <button
                         key={kw.label}
@@ -2017,13 +2021,19 @@ function InterviewPage() {
               </>
             )}
 
-            {/* 직접 입력 (항상 제공) */}
+            {/* 선택한 키워드 요약 (키워드가 있을 때만) */}
+            {selectedKw.length > 0 && (
+              <p className="mt-3 rounded-xl bg-[#F5F7FF] px-3.5 py-2.5 text-[13px] leading-relaxed text-ink-title">
+                <span className="font-semibold text-primary">선택함 · </span>{selectedKw.join(", ")}
+              </p>
+            )}
+
+            {/* 직접 입력 (항상 편집 가능, 키워드와 별개로 추가 설명 작성) */}
             <textarea
-              value={keywordMulti ? selectedKeywords.join(", ") + (currentAnswer.includes("\n\nAI 추천\n") ? currentAnswer.slice(currentAnswer.indexOf("\n\nAI 추천\n")) : "") : currentAnswer}
-              onChange={(e) => setCurrentAnswer(e.target.value)}
-              placeholder={dynQuestion.placeholder || "직접 자세히 적어주셔도 좋아요"}
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder={dynQuestion.keywords.length > 0 ? "추가로 설명하고 싶은 내용이 있으면 적어주세요 (선택)" : (dynQuestion.placeholder || "직접 자세히 적어주셔도 좋아요")}
               className="mt-3 min-h-[90px] w-full resize-none rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-base leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
-              readOnly={keywordMulti}
             />
 
             {/* 잘 모르겠어요 → AI 추천 */}
