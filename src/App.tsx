@@ -1593,17 +1593,15 @@ function InterviewPage() {
 
   const isAnswerEmpty = currentAnswer.trim().length === 0;
 
-  // 선택 키워드 토글 (다중/단일 모두 지원, 직접 입력과 공존)
+  // 선택 키워드가 있는 질문은 항상 여러 개 선택 가능 (AI가 allowMultiple을 false로 줘도 강제)
+  const keywordMulti = !!dynQuestion && dynQuestion.keywords.length > 0;
+
+  // 선택 키워드 토글 (여러 개 선택, 직접 입력과 공존)
   const toggleKeyword = (label: string) => {
     if (!dynQuestion) return;
     const parts = currentAnswer.split(MULTI_SEP).map((v) => v.trim()).filter((v) => v.length > 0);
-    if (dynQuestion.allowMultiple) {
-      const next = parts.includes(label) ? parts.filter((v) => v !== label) : [...parts, label];
-      setCurrentAnswer(next.join(MULTI_SEP));
-    } else {
-      // 단일 선택: 같은 걸 다시 누르면 해제
-      setCurrentAnswer(parts.length === 1 && parts[0] === label ? "" : label);
-    }
+    const next = parts.includes(label) ? parts.filter((v) => v !== label) : [...parts, label];
+    setCurrentAnswer(next.join(MULTI_SEP));
   };
 
   const selectedKeywords = currentAnswer.split(MULTI_SEP).map((v) => v.trim()).filter((v) => v.length > 0);
@@ -1611,7 +1609,7 @@ function InterviewPage() {
   // 답변 제출 → 히스토리에 추가하고 다음 질문 요청
   const submitAnswer = () => {
     if (!dynQuestion || isAnswerEmpty || qLoading) return;
-    const readable = dynQuestion.allowMultiple ? selectedKeywords.join(", ") : currentAnswer.trim();
+    const readable = keywordMulti ? selectedKeywords.join(", ") : currentAnswer.trim();
     const nextHistory = [...dynHistory, { question: dynQuestion.question, answer: readable }];
     setDynHistory(nextHistory);
     void requestNextQuestion(nextHistory, dynProjectState, false);
@@ -1993,7 +1991,7 @@ function InterviewPage() {
             {/* 선택 키워드 (있을 때만) */}
             {dynQuestion.keywords.length > 0 && (
               <>
-                {dynQuestion.allowMultiple && (
+                {keywordMulti && (
                   <p className="mt-4 text-[12.5px] font-medium text-primary">여러 개 선택할 수 있어요.</p>
                 )}
                 <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
@@ -2021,11 +2019,11 @@ function InterviewPage() {
 
             {/* 직접 입력 (항상 제공) */}
             <textarea
-              value={dynQuestion.allowMultiple ? selectedKeywords.join(", ") + (currentAnswer.includes("\n\nAI 추천\n") ? currentAnswer.slice(currentAnswer.indexOf("\n\nAI 추천\n")) : "") : currentAnswer}
+              value={keywordMulti ? selectedKeywords.join(", ") + (currentAnswer.includes("\n\nAI 추천\n") ? currentAnswer.slice(currentAnswer.indexOf("\n\nAI 추천\n")) : "") : currentAnswer}
               onChange={(e) => setCurrentAnswer(e.target.value)}
               placeholder={dynQuestion.placeholder || "직접 자세히 적어주셔도 좋아요"}
               className="mt-3 min-h-[90px] w-full resize-none rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-base leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
-              readOnly={dynQuestion.allowMultiple && dynQuestion.keywords.length > 0}
+              readOnly={keywordMulti}
             />
 
             {/* 잘 모르겠어요 → AI 추천 */}
