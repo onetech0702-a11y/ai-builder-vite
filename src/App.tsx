@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -644,42 +644,100 @@ function ProjectCreatePage() {
 
 /* ---------- AI 인터뷰: 단계 정의 ---------- */
 
-/* ---------- AI 생성 인터뷰 질문 ----------
- * 질문/선택지/설명은 하드코딩하지 않고, 사용자가 입력한 서비스에 맞춰 AI가 실시간 생성한다.
+/* ---------- 동적 인터뷰 타입 & 헬퍼 ----------
+ * 고정 질문 목록 없이, 답변마다 AI가 다음 질문을 생성한다.
  */
-// 다중 선택 답변 구분자 (선택지 라벨에 콤마가 있어도 안전하도록 콤마 대신 사용)
-const MULTI_SEP = " || ";
+interface QAHistoryItem {
+  question: string;
+  answer: string;
+}
 
-interface GeneratedQuestion {
+interface DynKeyword {
+  label: string;
+  recommended: boolean;
+}
+
+interface DynamicQuestion {
   id: string;
   label: string;
   question: string;
-  type: "text" | "choice";
-  multiSelect?: boolean;
+  reason: string;
+  keywords: DynKeyword[];
+  allowMultiple: boolean;
+  allowDirectInput: boolean;
   placeholder: string;
-  options: string[];
-  help: string;
-  required: boolean;
 }
 
-async function fetchInterviewQuestionsOnce(idea: string, analysis: unknown): Promise<GeneratedQuestion[]> {
-  const response = await fetch("/api/interview/generate-questions", {
+interface DynProjectState {
+  projectSummary: string;
+  serviceType: string;
+  targetUsers: string[];
+  userProblems: string[];
+  coreGoal: string;
+  coreFeatures: string[];
+  confirmedDecisions: string[];
+  rejectedDecisions: string[];
+  unknownItems: string[];
+}
+
+interface DynConfidence {
+  score: number;
+  missingCriticalItems: string[];
+  readyForPlanning: boolean;
+}
+
+interface DynRecommendation {
+  enabled: boolean;
+  content: string;
+  reason: string;
+}
+
+interface NextQuestionResult {
+  projectState: DynProjectState;
+  nextQuestion: DynamicQuestion;
+  recommendation: DynRecommendation;
+  confidence: DynConfidence;
+}
+
+interface NextQuestionArgs {
+  idea: string;
+  analysis: unknown;
+  history: QAHistoryItem[];
+  projectState: DynProjectState | null;
+  wantRecommendation: boolean;
+}
+
+async function fetchNextQuestionOnce(args: NextQuestionArgs): Promise<NextQuestionResult> {
+  const response = await fetch("/api/interview/next-question", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ idea, analysis }),
+    body: JSON.stringify({
+      idea: args.idea,
+      analysis: args.analysis,
+      history: args.history,
+      projectState: args.projectState ?? undefined,
+      wantRecommendation: args.wantRecommendation,
+    }),
   });
   if (!response.ok) throw new Error(`API error: ${response.status}`);
-  const data = (await response.json()) as { success: boolean; questions?: GeneratedQuestion[]; error?: string };
-  if (!data.success || !data.questions || data.questions.length < 3) throw new Error(data.error ?? "질문 생성 실패");
-  return data.questions;
+  const data = (await response.json()) as { success: boolean; error?: string } & Partial<NextQuestionResult>;
+  if (!data.success || !data.nextQuestion || !data.projectState || !data.confidence) {
+    throw new Error(data.error ?? "질문 생성 실패");
+  }
+  return {
+    projectState: data.projectState,
+    nextQuestion: data.nextQuestion,
+    recommendation: data.recommendation ?? { enabled: false, content: "", reason: "" },
+    confidence: data.confidence,
+  };
 }
 
 // AI가 일시적으로 실패하는 경우가 있어 최대 3번까지 자동 재시도한다
-async function fetchInterviewQuestions(idea: string, analysis: unknown, retries = 2): Promise<GeneratedQuestion[]> {
+async function fetchNextQuestion(args: NextQuestionArgs, retries = 2): Promise<NextQuestionResult> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      return await fetchInterviewQuestionsOnce(idea, analysis);
+      return await fetchNextQuestionOnce(args);
     } catch (error) {
       lastError = error;
       if (attempt < retries) await new Promise((resolve) => setTimeout(resolve, 700 * (attempt + 1)));
@@ -688,7 +746,53 @@ async function fetchInterviewQuestions(idea: string, analysis: unknown, retries 
   throw lastError instanceof Error ? lastError : new Error("질문 생성 실패");
 }
 
-/* ---------- 브랜드명 추천 / 아이디어 발굴 API ---------- */
+// ---- 저장/복원 (새로고침·오류에도 진행 상황 유지) ----
+interface DynInterviewSaved {
+  question: DynamicQuestion | null;
+  history: QAHistoryItem[];
+  projectState: DynProjectState | null;
+  confidence: DynConfidence;
+}
+
+function loadDynSaved(): DynInterviewSaved | null {
+  const project = loadCurrentProject();
+  const saved = project.dynInterview;
+  return saved && typeof saved === "object" ? (saved as DynInterviewSaved) : null;
+}
+
+function loadDynQuestion(): DynamicQuestion | null {
+  return loadDynSaved()?.question ?? null;
+}
+function loadDynHistory(): QAHistoryItem[] {
+  const h = loadDynSaved()?.history;
+  return Array.isArray(h) ? h : [];
+}
+function loadDynProjectState(): DynProjectState | null {
+  return loadDynSaved()?.projectState ?? null;
+}
+function loadDynConfidence(): DynConfidence {
+  return loadDynSaved()?.confidence ?? { score: 0, missingCriticalItems: [], readyForPlanning: false };
+}
+
+// 내용 검토 모달의 항목 섹션
+function ReviewSection({ title, items, muted }: { title: string; items: string[]; muted?: boolean }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <div className="mt-4">
+      <p className="text-[12px] font-bold text-ink-body">{title}</p>
+      <div className="mt-1.5 flex flex-wrap gap-1.5">
+        {items.map((item) => (
+          <span key={item} className={"rounded-badge px-2.5 py-1 text-[12px] font-medium " + (muted ? "bg-[#F3F4F6] text-ink-body line-through" : "bg-primary/8 text-ink-title")}>
+            {item}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// 다중 선택 답변 구분자 (선택지 라벨에 콤마가 있어도 안전하도록 콤마 대신 사용)
+const MULTI_SEP = " || ";
 
 async function fetchBrandNames(idea: string): Promise<string[]> {
   const response = await fetch("/api/interview/recommend", {
@@ -728,82 +832,7 @@ async function fetchIdeaSuggestions(discovery: Record<string, string>, retries =
   throw lastError instanceof Error ? lastError : new Error("아이디어 추천 실패");
 }
 
-
-/* ---------- AI 추천 타입 ---------- */
-
-interface AIRecommendation {
-  answer: string;           // 화면에 표시하는 추천 답변
-  applyValue: string;       // 추천 적용 시 실제 입력/선택되는 값
-  reasons: string[];        // 추천 이유
-  extraQuestions?: string[]; // AI가 제안하는 추가 질문
-}
-
-interface RecommendApiResponse {
-  success: boolean;
-  recommendation?: { answer: string; reason: string; applyValue: string; extraQuestions?: string[] };
-  error?: string;
-}
-
-async function fetchAIRecommendationOnce(
-  idea: string,
-  question: GeneratedQuestion,
-  step: number,
-  answers: Record<string, string>
-): Promise<AIRecommendation> {
-  const response = await fetch("/api/interview/recommend", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      idea,
-      currentStep: step + 1,
-      question: question.question,
-      options: question.type === "choice" ? question.options : undefined,
-      answers,
-    }),
-  });
-
-  if (!response.ok) throw new Error(`API error: ${response.status}`);
-
-  const data = (await response.json()) as RecommendApiResponse;
-  if (!data.success || !data.recommendation) throw new Error(data.error ?? "AI 추천 실패");
-
-  const { answer, reason, applyValue, extraQuestions } = data.recommendation;
-  return {
-    answer,
-    applyValue: applyValue || answer,
-    reasons: reason ? [reason] : [],
-    extraQuestions: extraQuestions ?? [],
-  };
-}
-
-// AI가 일시적으로 실패하는 경우가 있어 최대 3번까지 자동 재시도한다
-async function fetchAIRecommendation(idea: string, question: GeneratedQuestion, step: number, answers: Record<string, string>, retries = 2): Promise<AIRecommendation> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      return await fetchAIRecommendationOnce(idea, question, step, answers);
-    } catch (error) {
-      lastError = error;
-      if (attempt < retries) await new Promise((resolve) => setTimeout(resolve, 600 * (attempt + 1)));
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error("AI 추천 실패");
-}
-
 /* ---------- 페이지: AI 인터뷰 (단계형 플로우) ---------- */
-
-function loadSavedAnswers(): Record<string, string> {
-  const project = loadCurrentProject();
-  return typeof project.interviewAnswers === "object" && project.interviewAnswers !== null
-    ? (project.interviewAnswers as Record<string, string>)
-    : {};
-}
-
-function loadSavedQuestions(): GeneratedQuestion[] | null {
-  const project = loadCurrentProject();
-  const saved = project.interviewQuestions;
-  return Array.isArray(saved) && saved.length > 0 ? (saved as GeneratedQuestion[]) : null;
-}
 
 /* ---------- AI 프로젝트 분석 (Phase 4-1) ---------- */
 
@@ -1480,176 +1509,192 @@ function InterviewPage() {
     }
   };
 
-  const [searchParams, setSearchParams] = useSearchParams();
-  // 질문 단계는 URL(?q=번호)에서 읽는다 → 브라우저 뒤로가기가 이전 질문으로 이동
-  const qParam = searchParams.get("q");
+  // ===== 동적 인터뷰 상태 =====
+  // 질문을 미리 만들어두지 않고, 답변할 때마다 다음 질문을 AI가 생성한다.
+  const [dynQuestion, setDynQuestion] = useState<DynamicQuestion | null>(() => loadDynQuestion());
+  const [dynHistory, setDynHistory] = useState<QAHistoryItem[]>(() => loadDynHistory());
+  const [dynProjectState, setDynProjectState] = useState<DynProjectState | null>(() => loadDynProjectState());
+  const [dynConfidence, setDynConfidence] = useState<DynConfidence>(() => loadDynConfidence());
+  const [dynRecommendation, setDynRecommendation] = useState<DynRecommendation | null>(null);
 
-  // AI가 생성한 인터뷰 질문 (하드코딩 없음). 저장된 게 있으면 재사용
-  const [questions, setQuestions] = useState<GeneratedQuestion[]>(() => loadSavedQuestions() ?? []);
-  const [questionsLoading, setQuestionsLoading] = useState(false);
-  const [questionsFailed, setQuestionsFailed] = useState(false);
-  const [questionsRetryKey, setQuestionsRetryKey] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, string>>(() => loadSavedAnswers());
-  const [showHelp, setShowHelp] = useState(false);
-  const [recommendation, setRecommendation] = useState<AIRecommendation | null>(null);
-  const [isRecommending, setIsRecommending] = useState(false);
-  const [recommendNotice, setRecommendNotice] = useState("");
+  const [currentAnswer, setCurrentAnswer] = useState("");
+  const [qLoading, setQLoading] = useState(false);   // 다음 질문 생성 중
+  const [qFailed, setQFailed] = useState(false);      // 질문 생성 실패
+  const [qRetryKey, setQRetryKey] = useState(0);
+  const [recLoading, setRecLoading] = useState(false);
+  const [recNotice, setRecNotice] = useState("");
+  const [reviewOpen, setReviewOpen] = useState(false);
 
-  // 질문 단계에 진입했는데 질문이 없으면 AI로 생성 (자동 재시도 포함)
-  useEffect(() => {
-    if (phase !== "questions" || questions.length > 0 || idea.trim().length === 0) return;
-    let cancelled = false;
-    (async () => {
-      setQuestionsLoading(true);
-      setQuestionsFailed(false);
+  // 마지막 실패 요청을 재현하기 위한 정보 (답변 제출 실패 시 재시도용)
+  const pendingRef = useRef<{ history: QAHistoryItem[]; projectState: DynProjectState | null; wantRec: boolean } | null>(null);
+
+  const answeredCount = dynHistory.length;
+  // 진행 표시는 이해도(confidence) 기준. 초기에는 최소치.
+  const understanding = Math.max(dynConfidence.score, answeredCount === 0 ? 0 : 10);
+
+  // 다음 질문을 AI에게 요청하는 공통 함수
+  const requestNextQuestion = useCallback(
+    async (history: QAHistoryItem[], projectState: DynProjectState | null, wantRec: boolean) => {
+      pendingRef.current = { history, projectState, wantRec };
+      // 한 틱 뒤에 로딩 상태를 켜서 effect 내부 동기 setState를 피한다
+      await Promise.resolve();
+      setQLoading(true);
+      setQFailed(false);
+      setDynRecommendation(null);
+      setRecNotice("");
       try {
         const project = loadCurrentProject();
-        const generated = await fetchInterviewQuestions(idea, project.analysis ?? null);
-        if (!cancelled) {
-          setQuestions(generated);
-          updateCurrentProject({ interviewQuestions: generated });
-        }
+        const result = await fetchNextQuestion({
+          idea,
+          analysis: project.analysis ?? null,
+          history,
+          projectState,
+          wantRecommendation: wantRec,
+        });
+        setDynProjectState(result.projectState);
+        setDynConfidence(result.confidence);
+        setDynQuestion(result.nextQuestion);
+        setDynRecommendation(result.recommendation.enabled ? result.recommendation : null);
+        setCurrentAnswer("");
+        // 저장 (새로고침/오류에도 유지)
+        updateCurrentProject({
+          progress: 15,
+          dynInterview: {
+            question: result.nextQuestion,
+            history,
+            projectState: result.projectState,
+            confidence: result.confidence,
+          },
+        });
       } catch {
-        if (!cancelled) setQuestionsFailed(true);
+        // 더미 질문을 절대 보여주지 않고 오류 상태만 표시
+        setQFailed(true);
       } finally {
-        if (!cancelled) setQuestionsLoading(false);
+        setQLoading(false);
       }
-    })();
+    },
+    [idea]
+  );
+
+  // 질문 단계 최초 진입 시: 저장된 질문이 없으면 첫 질문 생성
+  useEffect(() => {
+    if (phase !== "questions" || idea.trim().length === 0) return;
+    if (dynQuestion || qLoading) return;
+    let cancelled = false;
+    // 마이크로태스크로 미뤄 effect 내부 동기 setState를 피한다
+    Promise.resolve().then(() => {
+      if (!cancelled) void requestNextQuestion(dynHistory, dynProjectState, false);
+    });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, idea, questionsRetryKey]);
+  }, [phase, idea, qRetryKey]);
 
-  const totalSteps = questions.length;
-  const stepIndex = qParam !== null && totalSteps > 0 ? Math.min(Math.max(0, Number(qParam) || 0), totalSteps - 1) : 0;
-  const step: GeneratedQuestion | undefined = questions[stepIndex];
-  const isLastStep = totalSteps > 0 && stepIndex === totalSteps - 1;
-  const value = step ? answers[step.id] ?? "" : "";
-  const isNextDisabled = step ? step.required && value.trim().length === 0 : true;
+  const isAnswerEmpty = currentAnswer.trim().length === 0;
 
-  // 현재 질문의 선택지 (질문 생성 시 AI가 함께 만들어 옴)
-  const currentOptions = step && step.type === "choice" ? step.options : [];
-  // 모든 선택형 질문은 여러 개 선택 가능 (저장된 옛 질문도 포함)
-  const isMulti = !!step && step.type === "choice";
-
-  const setValue = (v: string) => {
-    if (!step) return;
-    setAnswers((prev) => ({ ...prev, [step.id]: v }));
+  // 선택 키워드 토글 (다중/단일 모두 지원, 직접 입력과 공존)
+  const toggleKeyword = (label: string) => {
+    if (!dynQuestion) return;
+    const parts = currentAnswer.split(MULTI_SEP).map((v) => v.trim()).filter((v) => v.length > 0);
+    if (dynQuestion.allowMultiple) {
+      const next = parts.includes(label) ? parts.filter((v) => v !== label) : [...parts, label];
+      setCurrentAnswer(next.join(MULTI_SEP));
+    } else {
+      // 단일 선택: 같은 걸 다시 누르면 해제
+      setCurrentAnswer(parts.length === 1 && parts[0] === label ? "" : label);
+    }
   };
 
-  // 다중 선택 질문: 이미 있으면 빼고, 없으면 추가 (구분자로 저장)
-  const toggleMultiValue = (option: string) => {
-    if (!step) return;
-    const current = (answers[step.id] ?? "")
-      .split(MULTI_SEP)
-      .map((v) => v.trim())
-      .filter((v) => v.length > 0);
-    const next = current.includes(option)
-      ? current.filter((v) => v !== option)
-      : [...current, option];
-    setAnswers((prev) => ({ ...prev, [step.id]: next.join(MULTI_SEP) }));
-  };
+  const selectedKeywords = currentAnswer.split(MULTI_SEP).map((v) => v.trim()).filter((v) => v.length > 0);
 
-  const persist = (nextStep: number, nextAnswers: Record<string, string>) => {
-    updateCurrentProject({
-      progress: 15,
-      interviewStep: nextStep,
-      interviewAnswers: nextAnswers,
-    });
-  };
-
-  const moveTo = (nextIndex: number) => {
-    persist(nextIndex + 1, answers);
-    setSearchParams({ q: String(nextIndex) });
-    setShowHelp(false);
-    setRecommendation(null);
-    setRecommendNotice("");
+  // 답변 제출 → 히스토리에 추가하고 다음 질문 요청
+  const submitAnswer = () => {
+    if (!dynQuestion || isAnswerEmpty || qLoading) return;
+    const readable = dynQuestion.allowMultiple ? selectedKeywords.join(", ") : currentAnswer.trim();
+    const nextHistory = [...dynHistory, { question: dynQuestion.question, answer: readable }];
+    setDynHistory(nextHistory);
+    void requestNextQuestion(nextHistory, dynProjectState, false);
     window.scrollTo(0, 0);
   };
 
-  const handleNext = () => {
-    if (isNextDisabled) return;
-    if (isLastStep) {
-      updateCurrentProject({
-        status: "planning",
-        step: "planning-summary",
-        progress: 25,
-        interviewStep: totalSteps,
-        interviewAnswers: answers,
-        prd: null, // 답변이 바뀌었을 수 있으므로 기획서는 새로 생성
-      });
-      navigate("/project/summary");
-      return;
-    }
-    moveTo(stepIndex + 1);
+  // "잘 모르겠어요, 추천받기" → 추천 요청
+  const requestRecommendation = () => {
+    if (!dynQuestion || recLoading) return;
+    setRecLoading(true);
+    setRecNotice("");
+    setDynRecommendation(null);
+    (async () => {
+      try {
+        const project = loadCurrentProject();
+        const result = await fetchNextQuestion({
+          idea,
+          analysis: project.analysis ?? null,
+          history: dynHistory,
+          projectState: dynProjectState,
+          wantRecommendation: true,
+        });
+        if (result.recommendation.enabled) {
+          setDynRecommendation(result.recommendation);
+        } else {
+          setRecNotice("추천을 불러오지 못했어요. 잠시 후 다시 시도해주세요.");
+        }
+      } catch {
+        setRecNotice("추천을 불러오지 못했어요. 잠시 후 다시 시도해주세요.");
+      } finally {
+        setRecLoading(false);
+      }
+    })();
   };
 
-  const handlePrev = () => {
-    if (stepIndex === 0) {
+  // AI 추천 적용: 기존 입력을 덮어쓰지 않고 아래에 덧붙인다
+  const applyRecommendation = () => {
+    if (!dynRecommendation) return;
+    const rec = dynRecommendation.content.trim();
+    if (rec.length === 0) return;
+    const existing = currentAnswer.trim();
+    setCurrentAnswer(existing.length > 0 ? `${existing}\n\nAI 추천\n${rec}` : rec);
+    setDynRecommendation(null);
+  };
+
+  // 이전 질문으로 (마지막 히스토리 항목을 되돌림)
+  const goPrevQuestion = () => {
+    if (dynHistory.length === 0) {
       navigate(-1);
       return;
     }
-    navigate(-1);
+    const prev = dynHistory[dynHistory.length - 1];
+    const trimmedHistory = dynHistory.slice(0, -1);
+    setDynHistory(trimmedHistory);
+    // 직전 질문을 다시 보여주고, 사용자가 썼던 답을 복원
+    setDynQuestion({
+      id: `q_prev_${trimmedHistory.length}`,
+      label: "이전 질문",
+      question: prev.question,
+      reason: "",
+      keywords: [],
+      allowMultiple: false,
+      allowDirectInput: true,
+      placeholder: "답변을 입력해주세요",
+    });
+    setCurrentAnswer(prev.answer);
+    setDynRecommendation(null);
+    updateCurrentProject({ dynInterview: { question: null, history: trimmedHistory, projectState: dynProjectState, confidence: dynConfidence } });
+    window.scrollTo(0, 0);
   };
 
-  const handleShowHelp = () => setShowHelp(true);
-
-  const handleRecommend = async () => {
-    if (isRecommending) return;
-    setIsRecommending(true);
-    setRecommendation(null);
-    setRecommendNotice("");
-    try {
-      if (!step) return;
-      const result = await fetchAIRecommendation(idea, step, stepIndex, answers);
-      setRecommendation(result);
-    } catch {
-      // AI 실패 시 가짜 추천 대신 안내만 표시 (자동 재시도까지 실패한 경우)
-      setRecommendNotice("AI 추천을 불러오지 못했어요. 잠시 후 다시 시도해주세요.");
-    } finally {
-      setIsRecommending(false);
-    }
-  };
-
-  const handleApplyRecommendation = () => {
-    if (!recommendation || !step) return;
-
-    let valueToApply = recommendation.applyValue;
-    if (step.type === "choice" && currentOptions.length > 0) {
-      if (isMulti) {
-        // 다중 선택: 추천 답변에 언급된 선택지를 모두 골라 콤마로 합침
-        const picked = currentOptions.filter(
-          (option) => valueToApply.includes(option) || recommendation.answer.includes(option)
-        );
-        if (picked.length > 0) valueToApply = picked.join(MULTI_SEP);
-      } else if (!currentOptions.includes(valueToApply)) {
-        const matched = currentOptions.find(
-          (option) => valueToApply.includes(option) || recommendation.answer.includes(option)
-        );
-        if (matched) valueToApply = matched;
-      }
-    }
-    if (valueToApply.trim().length === 0) return; // 거부 응답(applyValue 없음)은 적용하지 않음
-
-    // 텍스트 질문: 사용자가 쓴 내용을 절대 지우지 않고, 한 줄 띄우고 AI 추천을 덧붙임
-    if (step.type === "text") {
-      const existing = (answers[step.id] ?? "").trimEnd();
-      if (existing.length > 0) {
-        const bulletItems = valueToApply
-          .split(/[,、]/)
-          .map((item) => item.trim())
-          .filter((item) => item.length > 0);
-        const bullets = (bulletItems.length > 0 ? bulletItems : [valueToApply.trim()])
-          .map((item) => `• ${item}`)
-          .join("\n");
-        valueToApply = `${existing}\n\nAI 추천\n${bullets}`;
-      }
-    }
-
-    const applied = { ...answers, [step.id]: valueToApply };
-    setAnswers(applied);
-    persist(stepIndex + 1, applied);
+  // 인터뷰 종료 → 기획서 단계로
+  const finishInterview = () => {
+    const qa = dynHistory.filter((h) => h.answer.trim().length > 0);
+    updateCurrentProject({
+      status: "planning",
+      step: "planning-summary",
+      progress: 25,
+      interviewAnswers: {},
+      interviewQA: qa,
+      prd: null,
+    });
+    navigate("/project/summary");
   };
 
   // ===== 아이디어 발굴 화면 =====
@@ -1869,200 +1914,222 @@ function InterviewPage() {
     );
   }
 
-  // ===== 질문 로딩/실패: AI가 질문을 생성하는 동안 =====
-  if (questionsLoading || (questions.length === 0 && !questionsFailed)) {
+  // ===== 질문 생성 중 (첫 질문 로딩) =====
+  if (phase === "questions" && qLoading && !dynQuestion) {
     return (
       <main className="flex flex-1 flex-col items-center justify-center gap-4 px-5 pt-4 pb-[140px] animate-fadeIn md:pb-12">
         <span className="h-10 w-10 animate-spin rounded-full border-[3px] border-primary/20 border-t-primary" aria-hidden="true" />
         <div className="text-center">
-          <p className="text-[16px] font-semibold text-ink-title">서비스에 맞는 질문을 준비하고 있어요.</p>
-          <p className="mt-1 text-[14px] text-ink-body">입력하신 내용을 바탕으로 꼭 필요한 질문만 만들고 있습니다. (예상 5~15초)</p>
+          <p className="text-[16px] font-semibold text-ink-title">답변을 바탕으로 다음 질문을 준비하고 있어요.</p>
+          <p className="mt-1 text-[14px] text-ink-body">입력하신 내용을 이해하고 꼭 필요한 것만 여쭤볼게요.</p>
         </div>
       </main>
     );
   }
 
-  if (questionsFailed || !step) {
+  // ===== 질문 생성 실패 (더미 대신 오류 안내) =====
+  if (phase === "questions" && qFailed && !dynQuestion) {
     return (
       <main className="flex flex-1 flex-col items-center justify-center gap-4 px-5 pt-4 pb-[140px] animate-fadeIn md:pb-12">
-        <p className="text-[16px] font-semibold text-ink-title">질문을 불러오지 못했어요.</p>
+        <p className="text-[16px] font-semibold text-ink-title">질문을 생성하지 못했습니다.</p>
         <p className="text-[14px] text-ink-body">잠시 후 다시 시도해주세요.</p>
-        <button
-          onClick={() => { setQuestionsFailed(false); setQuestionsRetryKey((k) => k + 1); }}
-          className="flex h-[48px] items-center justify-center gap-1.5 rounded-2xl bg-primary px-6 text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)]"
-        >
-          <RefreshCw className="h-4 w-4" />
-          다시 시도
-        </button>
+        <div className="flex gap-2.5">
+          <button onClick={() => navigate(-1)} className="flex h-[48px] items-center justify-center rounded-2xl border border-[#E5E8EB] bg-white px-5 text-[14px] font-semibold text-ink-body hover:border-[#D1D5DB]">
+            이전 단계로
+          </button>
+          <button
+            onClick={() => { setQFailed(false); const p = pendingRef.current; if (p) { void requestNextQuestion(p.history, p.projectState, p.wantRec); } else { setQRetryKey((k) => k + 1); } }}
+            className="flex h-[48px] items-center justify-center gap-1.5 rounded-2xl bg-primary px-6 text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)]"
+          >
+            <RefreshCw className="h-4 w-4" />
+            다시 시도
+          </button>
+        </div>
       </main>
     );
   }
 
-  return (
-    <main className="flex flex-1 flex-col px-5 pt-4 pb-[140px] animate-fadeIn md:items-center md:pt-10 md:pb-12">
-      <div className="flex w-full flex-col gap-4 md:max-w-[680px]">
-        <section className="rounded-[24px] border border-[#ECEEF2] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:p-8">
-          <h1 className="text-[24px] font-bold text-ink-title">AI 인터뷰</h1>
-
-          {idea.trim().length > 0 && (
-            <div className="mt-3 rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3">
-              <h2 className="text-[12px] font-semibold text-ink-body">입력한 아이디어</h2>
-              <p className="mt-0.5 whitespace-pre-wrap text-[14px] leading-relaxed text-ink-title">{idea}</p>
-            </div>
-          )}
-
-          {/* 진행률 */}
-          <div className="mt-6">
-            <div className="flex items-center justify-between text-[13px]">
-              <span className="font-semibold text-ink-body">
-                STEP {stepIndex + 1} <span className="mx-1 text-[#D1D5DB]" aria-hidden="true">·</span> {step.label}
-              </span>
-              <span className="font-bold text-primary">{Math.round(((stepIndex + 1) / totalSteps) * 100)}%</span>
-            </div>
-            <div className="mt-2">
-              <ProgressBar progress={Math.round(((stepIndex + 1) / totalSteps) * 100)} />
-            </div>
-          </div>
-
-          {/* 질문 */}
-          <h2 className="mt-6 text-[17px] font-bold leading-snug text-ink-title">{step.question}</h2>
-
-          {/* 입력 영역 */}
-          {step.type === "text" ? (
-            <textarea
-              key={step.id}
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder={step.placeholder}
-              className="mt-4 min-h-[110px] w-full resize-none rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-base leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          ) : (
-            <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-              {currentOptions.map((option) => {
-                const selectedValues = value.split(MULTI_SEP).map((v) => v.trim()).filter((v) => v.length > 0);
-                const isSelected = isMulti ? selectedValues.includes(option) : value === option;
-                return (
-                  <button
-                    key={option}
-                    onClick={() => (isMulti ? toggleMultiValue(option) : setValue(option))}
-                    className={
-                      "flex items-center justify-center rounded-2xl border px-4 py-3.5 text-center text-[15px] font-medium transition-colors duration-200 " +
-                      (isSelected
-                        ? "border-primary bg-primary/5 text-primary"
-                        : "border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]")
-                    }
-                  >
-                    {option}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {/* 잘 모르겠습니다 / AI 추천받기 */}
-          <div className="mt-3 flex gap-2.5">
-            <button
-              onClick={handleShowHelp}
-              className="flex h-[42px] flex-1 items-center justify-center rounded-2xl border border-[#E5E8EB] bg-white text-[13px] font-medium text-ink-body transition-colors duration-200 hover:border-[#D1D5DB] hover:text-ink-title"
-            >
-              잘 모르겠습니다
-            </button>
-            <button
-              onClick={handleRecommend}
-              disabled={isRecommending}
-              className="flex h-[42px] flex-1 items-center justify-center gap-1.5 rounded-2xl border border-primary/30 bg-primary/5 text-[13px] font-semibold text-primary transition-colors duration-200 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-                <path d="M12 2l1.9 5.5L19.5 9l-5.6 1.5L12 16l-1.9-5.5L4.5 9l5.6-1.5L12 2z" />
-              </svg>
-              AI 추천받기
-            </button>
-          </div>
-
-          {/* 안내 (잘 모르겠습니다) */}
-          {showHelp && (
-            <div className="mt-3 animate-fadeIn rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5">
-              <h3 className="text-[12px] font-semibold text-ink-body">안내</h3>
-              <p className="mt-1 text-[14px] leading-relaxed text-ink-title">{step.help}</p>
-            </div>
-          )}
-
-          {/* AI 추천 로딩 */}
-          {isRecommending && (
-            <div className="mt-3 animate-fadeIn rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3.5">
-              <p className="flex items-center gap-2 text-[13px] font-medium text-primary">
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary/30 border-t-primary" aria-hidden="true" />
-                AI가 추천을 만드는 중입니다...
-              </p>
-            </div>
-          )}
-
-          {/* AI 추천 실패 안내 */}
-          {recommendNotice && (
-            <div className="mt-3 animate-fadeIn rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3">
-              <p className="text-[13px] leading-relaxed text-ink-body">{recommendNotice}</p>
-            </div>
-          )}
-
-          {/* AI 추천 */}
-          {recommendation && (
-            <div className="mt-3 animate-fadeIn rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3.5">
-              <h3 className="flex items-center gap-1.5 text-[12px] font-semibold text-primary">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-                  <path d="M12 2l1.9 5.5L19.5 9l-5.6 1.5L12 16l-1.9-5.5L4.5 9l5.6-1.5L12 2z" />
-                </svg>
-                AI 추천
-              </h3>
-              <p className="mt-1.5 text-[14px] font-semibold text-ink-title">추천: {recommendation.answer}</p>
-              <ul className="mt-2 flex flex-col gap-1">
-                {recommendation.reasons.map((reason) => (
-                  <li key={reason} className="flex items-start gap-1.5 text-[13px] leading-relaxed text-ink-body">
-                    <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-                    {reason}
-                  </li>
-                ))}
-              </ul>
-              {recommendation.extraQuestions && recommendation.extraQuestions.length > 0 && (
-                <div className="mt-3 border-t border-primary/15 pt-3">
-                  <h4 className="text-[12px] font-semibold text-ink-body">추가로 생각해볼 질문</h4>
-                  <ul className="mt-1 flex flex-col gap-1">
-                    {recommendation.extraQuestions.map((q) => (
-                      <li key={q} className="text-[13px] leading-relaxed text-ink-title">· {q}</li>
-                    ))}
-                  </ul>
-                </div>
+  // ===== 동적 인터뷰 질문 화면 =====
+  if (phase === "questions" && dynQuestion) {
+    const canReview = dynHistory.length > 0 || (dynProjectState?.confirmedDecisions.length ?? 0) > 0;
+    return (
+      <main className="flex flex-1 flex-col px-5 pt-4 pb-[140px] animate-fadeIn md:items-center md:pt-10 md:pb-12">
+        <div className="flex w-full flex-col gap-4 md:max-w-[680px]">
+          <section className="rounded-[24px] border border-[#ECEEF2] bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:p-8">
+            <div className="flex items-center justify-between">
+              <h1 className="text-[24px] font-bold text-ink-title">AI 인터뷰</h1>
+              {canReview && (
+                <button onClick={() => setReviewOpen(true)} className="flex items-center gap-1 rounded-lg border border-[#E5E8EB] px-2.5 py-1.5 text-[12px] font-semibold text-ink-body hover:border-[#D1D5DB] hover:text-ink-title">
+                  <FileText className="h-3.5 w-3.5" /> 내용 검토
+                </button>
               )}
-              <button
-                onClick={handleApplyRecommendation}
-                className="mt-3 flex h-[42px] w-full items-center justify-center rounded-2xl bg-primary text-[13px] font-semibold text-white transition-transform duration-200 hover:scale-[1.01] active:scale-[0.99]"
-              >
-                추천 적용
-              </button>
             </div>
-          )}
 
-          {/* 이전 / 다음 */}
-          <div className="mt-6 flex gap-3">
-            {stepIndex > 0 && (
-              <button
-                onClick={handlePrev}
-                className="flex h-[52px] flex-1 items-center justify-center rounded-2xl border border-[#E5E8EB] bg-white text-[15px] font-semibold text-ink-body transition-colors duration-200 hover:border-[#D1D5DB] hover:text-ink-title"
-              >
-                이전
-              </button>
+            {/* 입력한 아이디어 */}
+            <div className="mt-4 rounded-2xl border border-[#EEF2FF] bg-[#F5F7FF] px-4 py-3">
+              <h2 className="text-[12px] font-semibold text-ink-body">입력한 아이디어</h2>
+              <p className="mt-0.5 text-[15px] font-semibold text-ink-title">{idea}</p>
+            </div>
+
+            {/* 프로젝트 이해도 */}
+            <div className="mt-4">
+              <div className="flex items-center justify-between text-[12px]">
+                <span className="font-semibold text-ink-body">
+                  프로젝트 이해도 {answeredCount > 0 ? <span className="text-ink-body">· 질문 {answeredCount + 1}</span> : null}
+                </span>
+                <span className="font-bold text-primary">{understanding}%</span>
+              </div>
+              <div className="mt-2">
+                <ProgressBar progress={understanding} />
+              </div>
+            </div>
+
+            {/* 질문 */}
+            <h2 className="mt-6 text-[17px] font-bold leading-snug text-ink-title">{dynQuestion.question}</h2>
+            {dynQuestion.reason && (
+              <p className="mt-1.5 text-[13px] leading-relaxed text-ink-body">{dynQuestion.reason}</p>
             )}
+
+            {/* 선택 키워드 (있을 때만) */}
+            {dynQuestion.keywords.length > 0 && (
+              <>
+                {dynQuestion.allowMultiple && (
+                  <p className="mt-4 text-[12.5px] font-medium text-primary">여러 개 선택할 수 있어요.</p>
+                )}
+                <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                  {dynQuestion.keywords.map((kw) => {
+                    const isSelected = selectedKeywords.includes(kw.label);
+                    return (
+                      <button
+                        key={kw.label}
+                        onClick={() => toggleKeyword(kw.label)}
+                        className={
+                          "flex items-center justify-center rounded-2xl border px-4 py-3.5 text-center text-[15px] font-medium transition-colors duration-200 " +
+                          (isSelected
+                            ? "border-primary bg-primary/5 text-primary"
+                            : "border-[#E5E8EB] bg-white text-ink-body hover:border-[#D1D5DB]")
+                        }
+                      >
+                        {kw.label}
+                        {kw.recommended && !isSelected && <span className="ml-1.5 rounded-badge bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">추천</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* 직접 입력 (항상 제공) */}
+            <textarea
+              value={dynQuestion.allowMultiple ? selectedKeywords.join(", ") + (currentAnswer.includes("\n\nAI 추천\n") ? currentAnswer.slice(currentAnswer.indexOf("\n\nAI 추천\n")) : "") : currentAnswer}
+              onChange={(e) => setCurrentAnswer(e.target.value)}
+              placeholder={dynQuestion.placeholder || "직접 자세히 적어주셔도 좋아요"}
+              className="mt-3 min-h-[90px] w-full resize-none rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] px-4 py-3.5 text-base leading-relaxed text-ink-title placeholder:text-ink-body focus:outline-none focus:ring-2 focus:ring-primary/30"
+              readOnly={dynQuestion.allowMultiple && dynQuestion.keywords.length > 0}
+            />
+
+            {/* 잘 모르겠어요 → AI 추천 */}
             <button
-              onClick={handleNext}
-              disabled={isNextDisabled}
-              className="flex h-[52px] flex-[2] items-center justify-center gap-2 rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)] transition-all duration-200 enabled:hover:scale-[1.02] enabled:active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+              onClick={requestRecommendation}
+              disabled={recLoading}
+              className="mt-3 flex h-[46px] w-full items-center justify-center gap-1.5 rounded-2xl border border-primary/30 bg-primary/5 text-[14px] font-semibold text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
             >
-              {isLastStep ? "인터뷰 완료" : "다음"}
+              {recLoading ? (
+                <><span className="h-4 w-4 animate-spin rounded-full border-2 border-primary/30 border-t-primary" aria-hidden="true" /> 추천을 준비하고 있어요...</>
+              ) : (
+                <><Sparkles className="h-4 w-4" /> 잘 모르겠어요, AI 추천받기</>
+              )}
+            </button>
+            {recNotice && <p className="mt-2 text-[12.5px] font-medium text-red-500">{recNotice}</p>}
+
+            {/* AI 추천 카드 */}
+            {dynRecommendation && (
+              <div className="mt-3 rounded-2xl border border-primary/25 bg-primary/5 p-4">
+                <p className="text-[12px] font-bold text-primary">AI 추천</p>
+                <p className="mt-1.5 text-[14px] leading-relaxed text-ink-title">{dynRecommendation.content}</p>
+                {dynRecommendation.reason && <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-body">{dynRecommendation.reason}</p>}
+                <button onClick={applyRecommendation} className="mt-3 flex h-[42px] w-full items-center justify-center rounded-xl bg-primary text-[13.5px] font-semibold text-white transition-transform hover:scale-[1.01]">
+                  이 추천 사용하기
+                </button>
+              </div>
+            )}
+
+            {/* 준비 완료 안내 */}
+            {dynConfidence.readyForPlanning && (
+              <div className="mt-4 rounded-2xl border border-[#BBF7D0] bg-[#F0FDF4] px-4 py-3">
+                <p className="text-[13px] font-bold text-[#16A34A]">핵심 정보가 준비됐어요</p>
+                <p className="mt-1 text-[12.5px] leading-relaxed text-[#15803D]">지금까지 답변으로 기획서를 만들 수 있어요. 계속 답변해도 되고, 지금 마쳐도 됩니다.</p>
+              </div>
+            )}
+          </section>
+
+          {/* 하단 버튼 */}
+          <div className="flex gap-2.5">
+            <button onClick={goPrevQuestion} className="flex h-[52px] flex-1 items-center justify-center rounded-2xl border border-[#E5E8EB] bg-white text-[14px] font-semibold text-ink-body transition-colors hover:border-[#D1D5DB] hover:text-ink-title">
+              이전
+            </button>
+            <button
+              onClick={submitAnswer}
+              disabled={isAnswerEmpty || qLoading}
+              className="flex h-[52px] flex-[2] items-center justify-center rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(79,107,255,0.45)] transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:hover:scale-100"
+            >
+              {qLoading ? "다음 질문 준비 중..." : "다음"}
             </button>
           </div>
-        </section>
-      </div>
-    </main>
-  );
+
+          {/* 인터뷰 종료 (준비되면 노출) */}
+          {dynConfidence.readyForPlanning && (
+            <button onClick={finishInterview} className="flex h-[50px] w-full items-center justify-center gap-1.5 rounded-2xl bg-[#16A34A] text-[15px] font-semibold text-white shadow-[0_6px_16px_-2px_rgba(22,163,74,0.4)] transition-transform hover:scale-[1.01]">
+              인터뷰 마치고 기획서 만들기
+            </button>
+          )}
+        </div>
+
+        {/* 내용 검토 모달 */}
+        <AnimatePresence>
+          {reviewOpen && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={() => setReviewOpen(false)}>
+              <motion.div
+                initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }} transition={{ duration: 0.2 }}
+                onClick={(e) => e.stopPropagation()}
+                className="max-h-[80vh] w-full overflow-y-auto rounded-t-[24px] bg-white p-6 sm:max-w-[480px] sm:rounded-[24px]"
+              >
+                <div className="flex items-center justify-between">
+                  <h3 className="text-[17px] font-bold text-ink-title">지금까지 정리된 내용</h3>
+                  <button onClick={() => setReviewOpen(false)} className="text-ink-body hover:text-ink-title"><XIcon className="h-5 w-5" /></button>
+                </div>
+                {dynProjectState?.projectSummary && (
+                  <p className="mt-3 rounded-xl bg-[#F5F7FF] px-3.5 py-2.5 text-[13px] leading-relaxed text-ink-title">{dynProjectState.projectSummary}</p>
+                )}
+                <ReviewSection title="대상 사용자" items={dynProjectState?.targetUsers ?? []} />
+                <ReviewSection title="해결하려는 문제" items={dynProjectState?.userProblems ?? []} />
+                <ReviewSection title="핵심 기능" items={dynProjectState?.coreFeatures ?? []} />
+                <ReviewSection title="확정한 내용" items={dynProjectState?.confirmedDecisions ?? []} />
+                <ReviewSection title="제외한 내용" items={dynProjectState?.rejectedDecisions ?? []} muted />
+                {dynHistory.length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-[12px] font-bold text-ink-body">지금까지의 질문과 답변</p>
+                    <div className="mt-2 flex flex-col gap-2">
+                      {dynHistory.map((h, i) => (
+                        <div key={i} className="rounded-xl border border-[#EEF0F3] px-3 py-2">
+                          <p className="text-[12px] font-semibold text-ink-title">{h.question}</p>
+                          <p className="mt-0.5 text-[12.5px] text-ink-body">{h.answer}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <button onClick={() => setReviewOpen(false)} className="mt-5 flex h-[46px] w-full items-center justify-center rounded-xl bg-primary text-[14px] font-semibold text-white">
+                  닫기
+                </button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </main>
+    );
+  }
+
 }
 
 /* ---------- AI 기획서(PRD) ---------- */
@@ -2122,18 +2189,11 @@ async function fetchGeneratePRD(
 // 저장된 인터뷰 질문 + 답변을 질문/답변 쌍으로 변환 (기획서 생성용)
 function buildInterviewQA(): { question: string; answer: string }[] {
   const project = loadCurrentProject();
-  const questions = Array.isArray(project.interviewQuestions) ? (project.interviewQuestions as GeneratedQuestion[]) : [];
-  const answers =
-    typeof project.interviewAnswers === "object" && project.interviewAnswers !== null
-      ? (project.interviewAnswers as Record<string, string>)
-      : {};
-  return questions
-    .map((q) => {
-      // 다중 선택 답변은 내부 구분자(||)를 읽기 좋은 형태로 바꿔서 전달
-      const raw = (answers[q.id] ?? "").trim();
-      const answer = q.type === "choice" ? raw.split(MULTI_SEP).map((v) => v.trim()).filter(Boolean).join(", ") : raw;
-      return { question: q.question, answer };
-    })
+  // 동적 인터뷰에서 저장한 질문/답변 쌍을 사용한다
+  const qa = Array.isArray(project.interviewQA) ? (project.interviewQA as { question: string; answer: string }[]) : [];
+  return qa
+    .filter((item) => item && typeof item.question === "string" && typeof item.answer === "string")
+    .map((item) => ({ question: item.question, answer: item.answer.trim() }))
     .filter((item) => item.answer.length > 0);
 }
 
